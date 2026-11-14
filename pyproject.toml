@@ -1,0 +1,14 @@
+[project]
+name = "fibu-pruefer"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["pydantic>=2", "pdfplumber>=0.11", "pillow", "openpyxl", "pyyaml", "langgraph"]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "mypy"]
+
+[tool.ruff]
+line-length = 110
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "skills"]

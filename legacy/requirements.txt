@@ -1,0 +1,4 @@
+pdfplumber>=0.11
+pillow
+# System: poppler-utils (pdftotext, pdftoppm), tesseract-ocr (nur für Scans)
+# Optional: Ollama (lokal) für --llm

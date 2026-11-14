@@ -1,0 +1,10 @@
+__pycache__/
+.venv/
+.fibu_cache/
+.fibu_pruefer_state.json
+Pruefbericht/
+*.sqlite
+.env
+# Echte Finanzdaten gehören nie ins Repository
+data/
+echt/
