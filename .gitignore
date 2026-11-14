@@ -8,3 +8,4 @@ Pruefbericht/
 # Echte Finanzdaten gehören nie ins Repository
 data/
 echt/
+.DS_Store
