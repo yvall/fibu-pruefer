@@ -1,8 +1,20 @@
 # Fortschritt Phase 1 – Fundament
 
-## Schritt 2: Contracts (`src/fibu/contracts/`)
+## Erledigte Schritte
 
-### Entstandene Module
+| Schritt | Commit | Inhalt |
+|---|---|---|
+| 0 Vorbereitung | `69f9c2c` | Startpaket, git init |
+| 1 Bestandsaufnahme | _(Plan Mode, kein Commit)_ | Migrationstabelle, Reihenfolge, Risiken |
+| 2 Verträge | `88376de` | `src/fibu/contracts/` – Pydantic-Modelle |
+| 3 Skill-Loader | `88376de` | `src/fibu/skills_runtime/` – Loader, Scheduler, Runner |
+| 4 Golden-Test | `407aff6` | `tests/golden/`, `conftest.py` |
+
+---
+
+## Schritt 2 – Contracts (`src/fibu/contracts/`)
+
+Pydantic-v2-Modelle mit `schema_version = "1"`:
 
 | Datei | Öffentliche Typen |
 |---|---|
@@ -12,8 +24,7 @@
 | `entscheidung.py` | `Entscheidung` |
 | `context.py` | `KlaerRow`, `ChangedKonto`, `Context` |
 
-### `Finding` (Pydantic v2)
-
+**`Finding`:**
 ```python
 class Finding(BaseModel):
     schema_version: str = "1"
@@ -22,13 +33,10 @@ class Finding(BaseModel):
     title: str
     detail: str
     calc: Calc | None = None               # erwartet, ist, differenz, formel
-    refs: list[Ref] = []                   # art: "seite"|"konto"|"beleg", id, label
+    refs: list[Ref] = []                   # art: "seite"|"konto"|"beleg"
 ```
 
-Unterschied zum Legacy-`Finding`: enthält `rule` (Regel-ID) und getypte `Calc`/`Ref`-Objekte statt freiem `ref: str`.
-
-### `Context` (Pydantic v2)
-
+**`Context`:**
 ```python
 class Context(BaseModel):
     auswertung: Auswertung
@@ -39,132 +47,84 @@ class Context(BaseModel):
     config: dict[str, object] = {}
 ```
 
-`changed_accounts` ist das typisierte Pendant zu `legacy.CheckResult.meta["changed"]`
-(Kontonr, Name, ΔSoll, ΔHaben). Es wird von der Runtime nach `vormonat-fortschreibung`
-befüllt und steht dann für `klaerungsliste` bereit.
+Wichtige Entscheidungen: `page_texts: list[str]` statt `pages: list[Page]`,
+`ustva: dict[str, UstvaKz]` mit `tax: Decimal | None` (None-Semantik wie Legacy),
+keine `from_legacy`/`to_legacy` im contracts-Paket selbst.
 
-### Wichtige Entscheidungen
-
-**`Auswertung.page_texts: list[str]`** statt `pages: list[pdfwords.Page]`:
-`pdfwords.Page` ist nicht serialisierbar. Der Rohtext je Seite reicht für alle
-Checks außer `check_ustva`, das auf `page.lines` zugreift — das wird in Schritt 5
-beim Skill `ustva-abgleich` gelöst.
-
-**`ustva: dict[str, UstvaKz]`** mit `tax: Decimal | None = None` (nicht `Decimal = 0`):
-Legacy-Checks testen `z81.get("tax") is not None`. Mit `None`-Default bleibt dieses
-Muster semantisch erhalten.
-
-**`bwa: dict[str, tuple[Decimal, Decimal]]`**: Pydantic v2 serialisiert Tuples als
-JSON-Arrays und deserialisiert sie korrekt zurück; `dict[int, str]` (page_types)
-bleibt Integer-gekeyt durch Pydantic-Coercion.
-
-**Keine `from_legacy`/`to_legacy` in contracts**: Konvertierungsfunktionen kommen
-erst in Schritt 5 (Thin-Wrapper-Phase), um die contracts-unabhängig und importierbar
-zu halten.
-
-**`schema_version: str = "1"`** auf `Auswertung`, `Finding`, `BelegRecord`,
-`Entscheidung` — gemäß Zielarchitektur.
-
-### Tests
-
-32 Tests in `tests/unit/contracts/`: Felddvalidierung, ungültige Werte,
-JSON-Roundtrip mit `Decimal`-Präzision, `dict[int, str]`-Schlüssel-Coercion,
-optionale Felder (`betrag`, `calc`, `bwa_per`).
+32 Tests in `tests/unit/contracts/`.
 
 ---
 
-## Schritt 3: Skills-Runtime (`src/fibu/skills_runtime/`)
-
-### Entstandene Module
-
-| Datei | Zuständigkeit |
-|---|---|
-| `loader.py` | YAML-Frontmatter parsen, `SkillManifest`-Liste erzeugen |
-| `scheduler.py` | Topologische Sortierung → Ausführungswellen |
-| `runner.py` | Einzelnen Skill laden und ausführen, Fehler kapseln |
-| `__init__.py` | `run_skills(ctx, skills_dir)` – öffentliche API |
-
-### Öffentliche API
+## Schritt 3 – Skills-Runtime (`src/fibu/skills_runtime/`)
 
 ```python
-# Einziger Einstiegspunkt für den Lauf
 results: list[SkillResult] = run_skills(ctx, skills_dir=Path("skills"))
-
-@dataclass
-class SkillResult:
-    skill_id: str
-    findings: list[Finding]
-    meta: dict[str, Any]   # z. B. changed_accounts nach vormonat-fortschreibung
-    error: str | None      # Traceback wenn Skill abgestürzt ist
 ```
 
-### Skill-Interface
+Jedes `skills/<id>/check.py` implementiert `def run(ctx: Context) -> list[Finding]`.
+SKILL.md-Frontmatter (`runs_after`, `inputs`) steuert Ausführungsreihenfolge.
+Fehler → Finding „Prüfung nicht durchgeführt", kein Laufabbruch.
 
-Jedes `skills/<id>/check.py` implementiert:
-```python
-def run(ctx: Context) -> list[Finding]: ...
-```
-
-Das SKILL.md-Frontmatter steuert die Ausführungsreihenfolge:
-```yaml
-runs_after: [vormonat-fortschreibung, belege-abgleich]
-inputs: [auswertung, belege, klaerung]
-```
-
-### Wichtige Entscheidungen
-
-**`ThreadPoolExecutor`** für parallele Wellen: konsistent mit `belege.scan()`;
-für CPU-gebundene Checks läuft Python wegen GIL faktisch seriell, aber LLM-Skills
-in späteren Phasen sind I/O-gebunden und profitieren davon.
-
-**Unbekannte `runs_after`-Einträge werden ignoriert**: ein Skill kann auf einen
-optionalen Skill verweisen, der im konkreten Lauf nicht vorhanden ist, ohne
-blockiert zu werden.
-
-**Zirkuläre Abhängigkeiten** lösen `RuntimeWarning` aus und laufen in einer
-gemeinsamen Welle — kein Absturz.
-
-**Fehler in Skill-Code** erzeugen ein `Finding` mit `severity="fehler"` und
-`title="Prüfung nicht durchgeführt"` und brechen den Gesamtlauf nicht ab.
-`SkillResult.error` enthält den vollständigen Traceback.
-
-**Skill-Module** werden unter eindeutigem Namen
-`_skills_runtime_{skill_id}` importiert, um Namenskollisionen zu vermeiden.
-
-### Tests
-
-26 Tests in `tests/unit/skills_runtime/`: Frontmatter-Parsing, alphabetische
-Sortierung, Topologie-Algorithmus (Kette, Diamant, unbekannte Deps, Zyklus),
-Einzelskill-Lauf (Erfolg, Absturz, fehlendes check.py, fehlende run-Funktion),
-Integrationsdurchlauf mit `run_skills`.
+26 Tests in `tests/unit/skills_runtime/`.
 
 ---
 
-## Offene Punkte für Schritt 5 (Thin Wrapper)
+## Schritt 4 – Golden-Test (`tests/golden/`)
 
-1. **`Auswertung.from_legacy()` / `to_legacy()`** – Konvertierung zwischen
-   Legacy-Dataclass und Pydantic-Modell; `to_legacy()` muss minimale `Page`-Objekte
-   für `check_ustva` rekonstruieren (braucht Rohtext aus `page_texts`).
+```bash
+# Referenz anlegen (erster Lauf):
+FIBU_GOLDEN_DIR="/pfad/zum/ordner" pytest tests/golden -v
 
-2. **`BelegRecord.from_legacy(beleg: Beleg)`** – Konvertierung aus `legacy.belege.Beleg`.
+# Vergleich (Folgeläufe):
+FIBU_GOLDEN_DIR="/pfad/zum/ordner" pytest tests/golden -v
 
-3. **`changed_accounts`-Befüllung in der Runtime**: nach Ausführung von
-   `vormonat-fortschreibung` soll `ctx.changed_accounts` aus `result.meta` gesetzt
-   werden, bevor `klaerungsliste` startet. Mechanismus noch nicht implementiert.
+# Referenz explizit erneuern:
+FIBU_GOLDEN_UPDATE=1 FIBU_GOLDEN_DIR="/pfad/zum/ordner" pytest tests/golden -v
+```
 
-4. **`check_ustva` und `page_texts`**: Die Datumslogik in `check_ustva` liest
-   `a.pages[0].lines` (pdfwords-Objekte). Im Skill `ustva-abgleich` wird das mit
-   `ctx.auswertung.page_texts[0]` gelöst.
+Die Referenzdatei `golden_findings.json` liegt im Periodenordner **außerhalb des Repos**
+und wird nie committet. Verglichen werden strukturierte Befunde:
+`{check, severity, title, detail}` – kein Layout, keine Timestamps.
+
+`conftest.py` (Projektwurzel) stellt `make_auswertung()` und `make_context()` als
+Pytest-Fixture-Factories für Skill-Unit-Tests bereit (gültig für `tests/` und `skills/`).
+
+Externe Abhängigkeiten: `pdftotext`, `pdftoppm` (poppler), `tesseract` –
+alle drei in `~/opt/anaconda3/bin/`.
 
 ---
 
-## Nächster Schritt: Golden-Test (Schritt 4)
+## Offen: CLI für die manuelle Prüfung
 
-Ziel: einen anonymisierten Fixture-Monat unter `tests/fixtures/` anlegen, den
-Legacy-Code darauf laufen lassen und den Bericht unter `tests/golden/` speichern.
-Dieser Bericht ist ab dann die Messlatte: jede Skill-Migration muss ihn bit-gleich
-reproduzieren.
+Der Legacy-Einstiegspunkt `python -m legacy.fibu_pruefer pruefen "<Ordner>"` bleibt
+als Referenz erhalten. Eine neue CLI unter `python -m fibu pruefen` (die die neuen
+Skills statt der Legacy-Checks aufruft) ist noch nicht implementiert. Sie entsteht
+in Phase 2 (Schritt „Graph") nach Abschluss der Regelmigration.
 
-**Voraussetzung**: ein echter oder synthetisch erzeugter BWA-Auswertungssatz als PDF
-(oder anonymisierter Text-Fixture), der alle Seiten enthält, die `parser.py` liest
-(BWA, Wertenachweis, Summen & Salden, OPOS, UStVA, Entwicklungsübersicht).
+---
+
+## Offen: Schritt 5 – Regelmigration
+
+Reihenfolge laut `docs/PROMPTS_PHASE_1.md`:
+
+| Welle | Skill-ID | Legacy-Funktion |
+|---|---|---|
+| 1 | `bwa-rechenwege` | `check_bwa_arithmetik` |
+| 1 | `summen-salden` | `check_summen_salden` |
+| 1 | `ergebnis-herleitung` | `check_ergebnis_aus_konten` |
+| 1 | `saldenrichtung` | `check_kontenrichtung` |
+| 2 | `wertenachweis-abgleich` | `check_wertenachweis` |
+| 2 | `ustva-abgleich` | `check_ustva` |
+| 2 | `opos-pruefung` | `check_opos` |
+| 2 | `durchlaufende-posten` | `check_durchlaufend` |
+| 2 | `entwicklung-ausreisser` | `check_entwicklung` |
+| 3 | `vormonat-fortschreibung` | `check_vormonat` |
+| 4 | `kosten-deckung` | `check_deckung` |
+| 4 | `umsatz-beweis` | `check_umsatz` |
+| 4 | `belege-abgleich` | `check_belege` |
+| 5 | `klaerungsliste` | `check_klaerung` |
+
+Strategie: jeder Skill beginnt als **Thin Wrapper** (ruft Legacy-Funktion auf,
+konvertiert `legacy.Finding → contracts.Finding`). Der Golden-Test muss nach
+jeder Migration grün bleiben. Für Thin Wrapper werden `Auswertung.from_legacy()`
+und `Auswertung.to_legacy()` in `src/fibu/contracts/auswertung.py` ergänzt.

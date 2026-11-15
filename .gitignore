@@ -9,3 +9,4 @@ Pruefbericht/
 data/
 echt/
 .DS_Store
+*.egg-info/
