@@ -15,7 +15,8 @@ line-length = 110
 exclude = ["legacy"]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src", "."]
+include = ["fibu*", "legacy*"]
 
 [tool.mypy]
 mypy_path = ["src"]
