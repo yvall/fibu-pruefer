@@ -5,6 +5,9 @@ __pycache__/
 Pruefbericht/
 *.sqlite
 .env
+# Lokale Konfiguration (enthält persönliche Pfade)
+config/lokal.yaml
+
 # Echte Finanzdaten gehören nie ins Repository
 data/
 echt/

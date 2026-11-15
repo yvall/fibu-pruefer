@@ -1,9 +1,6 @@
-from decimal import Decimal
 from pathlib import Path
 
-import pytest
-
-from fibu.contracts import Auswertung, Context, Finding
+from fibu.contracts import Auswertung, Context
 from fibu.skills_runtime.loader import SkillManifest
 from fibu.skills_runtime.runner import run_one_skill
 
@@ -88,8 +85,6 @@ def test_run_skills_integration(tmp_path: Path) -> None:
 def test_run_skills_respects_order(tmp_path: Path) -> None:
     """Skills mit runs_after laufen nach ihren Abhängigkeiten."""
     from fibu.skills_runtime import run_skills
-
-    execution_order: list[str] = []
 
     for skill_id, runs_after, body in [
         ("first", "", ""),

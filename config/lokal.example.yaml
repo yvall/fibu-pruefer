@@ -1,0 +1,11 @@
+# Lokale Konfiguration – persönliche Pfade und Einstellungen.
+# Kopiere diese Datei nach config/lokal.yaml und passe sie an.
+# config/lokal.yaml ist in .gitignore und wird nicht eingecheckt.
+#
+# Alternativ: FIBU_DATEN_WURZEL als Umgebungsvariable setzen –
+# das überschreibt den hier konfigurierten Wert für daten.wurzel.
+
+daten:
+  wurzel: ~/Dokumente/Buchhaltung/IF2IT   # Verzeichnis mit den Monatsordnern
+  bwa_ordner: BWA                          # Unterordner je Monat mit dem BWA-PDF
+  bericht_ordner: Pruefbericht             # Unterordner für erzeugte Berichte
