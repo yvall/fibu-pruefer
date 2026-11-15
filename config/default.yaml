@@ -1,2 +1,6 @@
 # Schwellenwerte für alle Prüfregeln – werden in ctx.config geladen (Phase 2).
 toleranz: 0.02       # Toleranzgrenze aller Rechenweg-Prüfungen in €
+
+# SKR04-Sammelkonten (summen-salden)
+debitoren_sammelkonto: "1200"
+kreditoren_sammelkonto: "3300"
