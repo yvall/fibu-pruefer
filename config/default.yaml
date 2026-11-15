@@ -1,0 +1,2 @@
+# Schwellenwerte für alle Prüfregeln – werden in ctx.config geladen (Phase 2).
+toleranz: 0.02       # Toleranzgrenze aller Rechenweg-Prüfungen in €

@@ -14,6 +14,10 @@ fibu = "fibu.cli:main"
 line-length = 110
 exclude = ["legacy"]
 
+[tool.ruff.lint.per-file-ignores]
+"skills/**/__init__.py" = ["N999"]
+"skills/*/tests/__init__.py" = ["N999"]
+
 [tool.setuptools.packages.find]
 where = ["src", "."]
 include = ["fibu*", "legacy*"]

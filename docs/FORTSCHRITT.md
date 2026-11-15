@@ -103,26 +103,26 @@ in Phase 2 (Schritt „Graph") nach Abschluss der Regelmigration.
 
 ---
 
-## Offen: Schritt 5 – Regelmigration
+## Schritt 5 – Regelmigration (laufend)
 
 Reihenfolge laut `docs/PROMPTS_PHASE_1.md`:
 
-| Welle | Skill-ID | Legacy-Funktion |
-|---|---|---|
-| 1 | `bwa-rechenwege` | `check_bwa_arithmetik` |
-| 1 | `summen-salden` | `check_summen_salden` |
-| 1 | `ergebnis-herleitung` | `check_ergebnis_aus_konten` |
-| 1 | `saldenrichtung` | `check_kontenrichtung` |
-| 2 | `wertenachweis-abgleich` | `check_wertenachweis` |
-| 2 | `ustva-abgleich` | `check_ustva` |
-| 2 | `opos-pruefung` | `check_opos` |
-| 2 | `durchlaufende-posten` | `check_durchlaufend` |
-| 2 | `entwicklung-ausreisser` | `check_entwicklung` |
-| 3 | `vormonat-fortschreibung` | `check_vormonat` |
-| 4 | `kosten-deckung` | `check_deckung` |
-| 4 | `umsatz-beweis` | `check_umsatz` |
-| 4 | `belege-abgleich` | `check_belege` |
-| 5 | `klaerungsliste` | `check_klaerung` |
+| Welle | Skill-ID | Legacy-Funktion | Status |
+|---|---|---|---|
+| 1 | `bwa-rechenwege` | `check_bwa_arithmetik` | ✓ migriert |
+| 1 | `summen-salden` | `check_summen_salden` | offen |
+| 1 | `ergebnis-herleitung` | `check_ergebnis_aus_konten` | offen |
+| 1 | `saldenrichtung` | `check_kontenrichtung` | offen |
+| 2 | `wertenachweis-abgleich` | `check_wertenachweis` | offen |
+| 2 | `ustva-abgleich` | `check_ustva` | offen |
+| 2 | `opos-pruefung` | `check_opos` | offen |
+| 2 | `durchlaufende-posten` | `check_durchlaufend` | offen |
+| 2 | `entwicklung-ausreisser` | `check_entwicklung` | offen |
+| 3 | `vormonat-fortschreibung` | `check_vormonat` | offen |
+| 4 | `kosten-deckung` | `check_deckung` | offen |
+| 4 | `umsatz-beweis` | `check_umsatz` | offen |
+| 4 | `belege-abgleich` | `check_belege` | offen |
+| 5 | `klaerungsliste` | `check_klaerung` | offen |
 
 Strategie: jeder Skill beginnt als **Thin Wrapper** (ruft Legacy-Funktion auf,
 konvertiert `legacy.Finding → contracts.Finding`). Der Golden-Test muss nach
