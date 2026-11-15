@@ -111,8 +111,8 @@ Reihenfolge laut `docs/PROMPTS_PHASE_1.md`:
 |---|---|---|---|
 | 1 | `bwa-rechenwege` | `check_bwa_arithmetik` | ✓ migriert |
 | 1 | `summen-salden` | `check_summen_salden` | ✓ migriert |
-| 1 | `ergebnis-herleitung` | `check_ergebnis_aus_konten` | offen |
-| 1 | `saldenrichtung` | `check_kontenrichtung` | offen |
+| 1 | `ergebnis-herleitung` | `check_ergebnis_aus_konten` | ✓ migriert |
+| 1 | `saldenrichtung` | `check_kontenrichtung` | ✓ migriert |
 | 2 | `wertenachweis-abgleich` | `check_wertenachweis` | offen |
 | 2 | `ustva-abgleich` | `check_ustva` | offen |
 | 2 | `opos-pruefung` | `check_opos` | offen |

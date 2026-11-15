@@ -1,10 +1,15 @@
 """Tests für skills/bwa-rechenwege/check.py."""
 from __future__ import annotations
 
+import importlib.util
 from decimal import Decimal as D
+from pathlib import Path as _P
 from typing import Any
 
-from check import run  # type: ignore[import]  # Pfad via conftest.py
+_spec = importlib.util.spec_from_file_location("_bwa_rechenwege", _P(__file__).parent.parent / "check.py")
+_mod = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
+_spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+run = _mod.run  # type: ignore[attr-defined]
 
 
 def _bwa_korrekt() -> dict[str, Any]:

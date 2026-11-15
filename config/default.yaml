@@ -4,3 +4,13 @@ toleranz: 0.02       # Toleranzgrenze aller Rechenweg-Prüfungen in €
 # SKR04-Sammelkonten (summen-salden)
 debitoren_sammelkonto: "1200"
 kreditoren_sammelkonto: "3300"
+
+# Schwellen und Ausnahmen (saldenrichtung)
+saldenrichtung_min_saldo: 1.00   # Mindest-Saldo in € für die Richtungsprüfung
+saldenrichtung_skip:              # Konten mit typischerweise atypischer Saldenrichtung
+  - "2910"
+  - "3820"
+  - "3830"
+  - "4946"
+  - "1370"
+  - "6850_"
