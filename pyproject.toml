@@ -17,6 +17,11 @@ where = ["src"]
 mypy_path = ["src"]
 strict = true
 ignore_missing_imports = true
+exclude = ["^legacy/"]
+
+[[tool.mypy.overrides]]
+module = ["legacy.*"]
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "skills"]
