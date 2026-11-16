@@ -14,3 +14,24 @@ store:
   # ACHTUNG: Diese Datei enthält echte Finanzdaten (Befunde, Kontext).
   # Sie wird mit Rechten 0600 angelegt und darf nicht ins Repository.
   sqlite_pfad: ~/.fibu/laeufe.db
+
+mail:
+  smtp_host: mail.example.com
+  smtp_port: 587
+  smtp_user: fibu@example.com
+  # smtp_pass: Passwort hier ODER Umgebungsvariable FIBU_SMTP_PASS (bevorzugt)
+  von: "Fibu-Prüfer <fibu@example.com>"
+  an:
+    - steuerberater@example.com
+  # Empfänger niemals aus Berichts- oder Beleginhalten – nur aus dieser Datei (Anti-Injection)
+
+llm:
+  # Alternativ: Umgebungsvariable FIBU_LLM_MODELL=mistral:latest (überschreibt nur das Modell)
+  anbieter: ollama
+  url: http://localhost:11434
+  modell: mistral:latest            # leer lassen → LLM-Skills überspringen, kein Fehler
+  temperatur: 0.0                   # 0.0 für reproduzierbare Eval-Ergebnisse
+  timeout_sekunden: 120
+  # modell_zuordnung:               # optionales Modell je Skill-ID
+  #   beleg-extraktion: llama3:8b
+  #   rueckfrage-entwurf: mistral:latest

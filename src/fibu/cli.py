@@ -121,10 +121,79 @@ def _cmd_freigeben(a: argparse.Namespace) -> int:
     freigabe = "freigegeben" if a.freigabe == "ja" else "gesperrt"
     entscheidung = Entscheidung(freigabe=freigabe, kommentar=a.kommentar or "")  # type: ignore[arg-type]
 
-    result = freigeben_lauf(lauf.lauf_id, entscheidung, store)
+    result = freigeben_lauf(lauf.lauf_id, entscheidung, store, trocken=bool(a.trocken))
     print(f"Lauf {lauf.lauf_id[:8]}… {freigabe}.")
     if result.get("bericht_md_pfad"):
         print(f"Bericht: {result['bericht_md_pfad']}")
+    if result.get("versand_ok"):
+        trocken_hinweis = " (Trockenlauf)" if a.trocken else ""
+        print(f"Versand: ok{trocken_hinweis}")
+    return 0
+
+
+def _cmd_llm_pruefen(_a: argparse.Namespace) -> int:
+    """Zeigt die LLM-Konfiguration und prüft Ollama-Erreichbarkeit und Modell-Status."""
+
+    from fibu.config import LokaleConfig
+    from fibu.llm.ollama import OllamaClient
+
+    cfg = LokaleConfig.laden()
+    llm = cfg.llm
+
+    print("Konfiguration")
+    print(f"  Anbieter         : {llm.anbieter}")
+    print(f"  URL              : {llm.url}")
+    print(f"  Modell           : {llm.modell or '(nicht konfiguriert)'}")
+    print(f"  Temperatur       : {llm.temperatur}")
+    print(f"  Timeout          : {llm.timeout_sekunden} s")
+    if llm.modell_zuordnung:
+        print("  Modell-Zuordnung :")
+        for skill_id, m in llm.modell_zuordnung.items():
+            print(f"    {skill_id}: {m}")
+    else:
+        print("  Modell-Zuordnung : (keine)")
+    print()
+
+    if not llm.modell:
+        print("FEHLER: Kein Modell konfiguriert.")
+        print("  Setze 'llm.modell' in config/lokal.yaml oder FIBU_LLM_MODELL=<modell>")
+        return 2
+
+    client = OllamaClient.aus_config(llm)
+    ok, meldung = client.ist_verfuegbar()
+
+    erreichbar = ok or ("nicht installiert" in meldung)
+    print("Ollama-Status")
+    print(f"  Erreichbar       : {'ja' if erreichbar else 'NEIN'}")
+    if not erreichbar:
+        print(f"  Fehler           : {meldung}")
+        return 2
+
+    modell_ok = ok
+    print(f"  Modell verfügbar : {'ja' if modell_ok else 'NEIN'}")
+    if not modell_ok:
+        print(f"  Hinweis          : {meldung}")
+        return 2
+
+    # Versionsnummer aus der OK-Meldung extrahieren
+    version_hinweis = meldung  # z. B. "Ollama 0.5.1"
+    print(f"  Version          : {version_hinweis}")
+    print()
+
+    # Structured Output testen
+    print("Structured Output (format)")
+    strukturiert = client.pruefe_structured_output()
+    print(f"  Unterstützt      : {'ja' if strukturiert else 'nein (Fallback json.loads aktiv)'}")
+    print()
+
+    # Einfacher Test-Aufruf
+    print("Test-Aufruf")
+    antwort = client.generiere("Nenne die Zahl sieben auf Deutsch in einem Wort. Nur das Wort, nichts sonst.")
+    if antwort is None:
+        print("  Ergebnis         : FEHLER – kein Response")
+        return 2
+    print(f"  Antwort          : {antwort[:80]!r}")
+    print("  Ergebnis         : ok")
     return 0
 
 
@@ -160,6 +229,10 @@ def main() -> int:
 
     sub.add_parser("monate", help="Periodenordner der Wurzel auflisten")
 
+    p_llm = sub.add_parser("llm", help="LLM-Konfiguration und Ollama-Status")
+    sub_llm = p_llm.add_subparsers(dest="llm_cmd", required=True)
+    sub_llm.add_parser("pruefen", help="Konfiguration anzeigen, Ollama-Status und Modell prüfen")
+
     p_fg = sub.add_parser("freigeben", help="pausierten Prüflauf freigeben oder sperren")
     gruppe_fg = p_fg.add_mutually_exclusive_group(required=True)
     gruppe_fg.add_argument("--ordner", metavar="PFAD", help="Pfad zum Periodenordner")
@@ -167,6 +240,8 @@ def main() -> int:
     p_fg.add_argument("--freigabe", choices=["ja", "nein"], default="ja",
                       help="Freigabe erteilen (ja) oder sperren (nein)")
     p_fg.add_argument("--kommentar", metavar="TEXT", default="", help="Optionaler Kommentar")
+    p_fg.add_argument("--trocken", action="store_true",
+                      help="Trockenlauf: Versand wird protokolliert, aber keine Mail gesendet")
 
     a = ap.parse_args()
     try:
@@ -174,6 +249,8 @@ def main() -> int:
             return _cmd_pruefen(a)
         if a.cmd == "freigeben":
             return _cmd_freigeben(a)
+        if a.cmd == "llm":
+            return _cmd_llm_pruefen(a)
         return _cmd_monate(a)
     except FibuFehler as e:
         print(f"Fehler: {e}", file=sys.stderr)

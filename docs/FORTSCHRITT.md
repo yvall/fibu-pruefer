@@ -1,3 +1,28 @@
+# Fortschritt Phase 3 – LLM-Skills
+
+## Schritt 3a – LLM-Adapter ✓
+
+Neue Pakete und Änderungen:
+
+| Datei / Paket | Inhalt |
+|---|---|
+| `src/fibu/llm/__init__.py` | Exports: `LlmClient`, `OllamaClient`, `NullLlmClient` |
+| `src/fibu/llm/protocol.py` | `LlmClient` Protocol (`@runtime_checkable`): `modell`, `modell_fuer(skill_id)`, `generiere(prompt, json_schema)` |
+| `src/fibu/llm/ollama.py` | `OllamaClient`: `generiere()` via `urllib.request`, Temperatur 0.0, `json_schema` als Ollama-`format`-Parameter; `ist_verfuegbar()` prüft Erreichbarkeit und Modell-Installation; `pruefe_structured_output()`; `# noqa: BLE001` für intentionell breite Netzwerk-Exceptions |
+| `src/fibu/llm/null.py` | `NullLlmClient`: `generiere()` immer `None` (Tests, Trockenlauf) |
+| `src/fibu/config.py` | `LlmConfig(anbieter, url, modell, temperatur=0.0, timeout_sekunden=120, modell_zuordnung)`; in `LokaleConfig.laden()` überschreibt `FIBU_LLM_MODELL` nur das Modell |
+| `config/lokal.example.yaml` | `llm:`-Abschnitt mit `modell_zuordnung`-Beispiel |
+| `config/default.yaml` | Platzhalter-Kommentar (kein Standardmodell im Repo) |
+| `src/fibu/cli.py` | `fibu llm pruefen`: zeigt Konfiguration, prüft Erreichbarkeit, Modell-Installation, Structured-Output-Unterstützung und macht Test-Aufruf; Exit 0/2 |
+
+**Fallback-Kette:** `FIBU_LLM_MODELL` > `llm.modell` in `lokal.yaml` > leer (kein LLM).
+Leeres Modell = kein Netzaufruf, `generiere()` → `None` → LLM-Skills erzeugen „nicht verfügbar"-Findings.
+Modell konfiguriert aber nicht installiert = Meldung mit `ollama pull <modell>`.
+
+30 neue Tests (unit/llm). 270 Tests grün.
+
+---
+
 # Fortschritt Phase 1 – Fundament
 
 ## Erledigte Schritte
@@ -44,6 +69,26 @@ Testanforderung: Alle `id`-Werte in einem Lauf sind eindeutig.
 `config/lokal.yaml` (außerhalb des Repos, in `.gitignore`) enthält den
 `store.sqlite_pfad`-Schlüssel. Fallback: `~/.fibu/laeufe.db`.
 `config/default.yaml` enthält nur den Platzhalter-Kommentar.
+
+## Schritt 2c – Versand-Knoten ✓
+
+Neue Pakete und Änderungen:
+
+| Datei / Paket | Inhalt |
+|---|---|
+| `src/fibu/ingest/mail.py` | `MailSender` Protocol, `SmtpMailSender` (STARTTLS, Passwort aus `FIBU_SMTP_PASS` oder `lokal.yaml`), `NullMailSender` (Trockenlauf). Empfänger ausschließlich aus `MailConfig.an`. |
+| `src/fibu/config.py` | `MailConfig` (smtp\_host/port/user/pass, von, an); eingebaut in `LokaleConfig`. |
+| `config/lokal.example.yaml` | `mail:`-Abschnitt mit Anti-Injection-Hinweis. |
+| `src/fibu/store/sqlite.py` | Spalte `versand_ok` (Migration via try/except); `setze_versand_ok()`, `ist_versand_ok()`. |
+| `src/fibu/graph/state.py` | Optionales Feld `versand_ok: bool`. |
+| `src/fibu/graph/nodes.py` | Knoten `versand`: idempotent, No-op bei gesperrter/fehlender Freigabe. |
+| `src/fibu/graph/graph.py` | `create_graph(mail_sender=…)`; Kante `warte_auf_freigabe → versand → END`. |
+| `src/fibu/graph/runner.py` | `freigeben_lauf(trocken=…, _mail_sender=…)`; Status „gesperrt" bei abgelehnter Freigabe. |
+| `src/fibu/cli.py` | `fibu freigeben --trocken`; Ausgabe „Versand: ok (Trockenlauf)". |
+
+22 neue Tests (unit/ingest, unit/store, unit/graph, integration). 240 Tests grün.
+
+---
 
 ## Schritt 2b – Persistenz, Finding-IDs, Freigabe ✓
 
