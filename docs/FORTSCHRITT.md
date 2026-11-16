@@ -94,12 +94,17 @@ alle drei in `~/opt/anaconda3/bin/`.
 
 ---
 
-## Offen: CLI für die manuelle Prüfung
+## CLI für die manuelle Prüfung ✓
+
+`python -m fibu pruefen --ordner "<Periodenordner>"` nutzt die neue Skills-Runtime:
+
+- `src/fibu/ingest/` – Konvertierung legacy.Auswertung → contracts.Auswertung,
+  Belege und Klärungsliste laden
+- `src/fibu/report.py` – Markdown + HTML aus `list[SkillResult]`
+- `python -m fibu pruefen --legacy` – schaltet auf den alten Pipeline-Pfad zurück
 
 Der Legacy-Einstiegspunkt `python -m legacy.fibu_pruefer pruefen "<Ordner>"` bleibt
-als Referenz erhalten. Eine neue CLI unter `python -m fibu pruefen` (die die neuen
-Skills statt der Legacy-Checks aufruft) ist noch nicht implementiert. Sie entsteht
-in Phase 2 (Schritt „Graph") nach Abschluss der Regelmigration.
+erhalten. Phase 1 ist damit abgeschlossen.
 
 ---
 

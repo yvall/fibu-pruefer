@@ -53,10 +53,18 @@ def _cmd_pruefen(a: argparse.Namespace) -> int:
         if not period_dir.is_dir():
             raise FibuFehler(f"Ordner nicht gefunden: {period_dir}")
     else:
-        config = LokaleConfig.laden()
-        root = _wurzel_aus_config(config)
+        cfg = LokaleConfig.laden()
+        root = _wurzel_aus_config(cfg)
         period_dir = _monat_aufloesen(root, str(a.monat))
 
+    if a.legacy:
+        return _cmd_pruefen_legacy(period_dir, a)
+
+    return _cmd_pruefen_skills(period_dir)
+
+
+def _cmd_pruefen_legacy(period_dir: Path, a: argparse.Namespace) -> int:
+    """Prüfung über den Legacy-Pfad (python -m legacy.fibu_pruefer pruefen)."""
     from legacy.fibu_pruefer import pipeline
 
     try:
@@ -65,6 +73,33 @@ def _cmd_pruefen(a: argparse.Namespace) -> int:
         raise FibuFehler(f"Kein BWA-PDF in {period_dir / 'BWA'}")
     print(f"{res.status.upper()}  ->  {res.md_path}\n               {res.html_path}")
     return {"ok": 0, "pruefen": 1, "fehler": 2}.get(str(res.status), 2)
+
+
+def _cmd_pruefen_skills(period_dir: Path) -> int:
+    """Prüfung über die neue Skills-Runtime."""
+    from fibu.ingest import load_context
+    from fibu.report import overall_severity, to_html, to_markdown
+    from fibu.skills_runtime import run_skills
+
+    try:
+        ctx = load_context(period_dir)
+    except FileNotFoundError as exc:
+        raise FibuFehler(str(exc))
+
+    results = run_skills(ctx, skills_dir=Path("skills"))
+
+    out_dir = period_dir / "Pruefbericht"
+    out_dir.mkdir(exist_ok=True)
+    a = ctx.auswertung
+    stem = f"Pruefbericht_{a.year}-{a.month:02d}"
+    md_path = out_dir / f"{stem}.md"
+    html_path = out_dir / f"{stem}.html"
+    md_path.write_text(to_markdown(a, results), encoding="utf-8")
+    html_path.write_text(to_html(a, results), encoding="utf-8")
+
+    sev = overall_severity(results)
+    print(f"{sev.upper()}  ->  {md_path}\n           {html_path}")
+    return {"ok": 0, "pruefen": 1, "fehler": 2}.get(sev, 2)
 
 
 def _cmd_monate(_a: argparse.Namespace) -> int:
@@ -93,7 +128,8 @@ def main() -> int:
         "--monat", metavar="NAME", help="Monatsordner (z. B. '08 Aug' oder Kurzform '08')"
     )
     gruppe.add_argument("--ordner", metavar="PFAD", help="voller Pfad zum Periodenordner")
-    p1.add_argument("--llm", action="store_true", help="Zusammenfassung per lokalem Ollama formulieren")
+    p1.add_argument("--llm", action="store_true", help="Zusammenfassung per lokalem Ollama formulieren (nur mit --legacy)")
+    p1.add_argument("--legacy", action="store_true", help="Legacy-Pipeline statt Skills-Runtime verwenden")
 
     sub.add_parser("monate", help="Periodenordner der Wurzel auflisten")
 
