@@ -18,5 +18,7 @@ class NullLlmClient:
         self,
         prompt: str,
         json_schema: dict[str, Any] | None = None,
+        *,
+        modell: str = "",
     ) -> str | None:
         return None

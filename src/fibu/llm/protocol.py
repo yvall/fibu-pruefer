@@ -19,10 +19,13 @@ class LlmClient(Protocol):
         self,
         prompt: str,
         json_schema: dict[str, Any] | None = None,
+        *,
+        modell: str = "",
     ) -> str | None:
         """Schickt einen Prompt an das LLM.
 
         json_schema: optionales JSON-Schema für Structured Output (Ollama format-Parameter).
+        modell: Überschreibt das Standard-Modell für diesen Aufruf (E11 – Skill-spezifisch).
         Gibt None zurück wenn nicht erreichbar, Modell fehlt oder ein Fehler auftritt.
         Der Aufrufer ist für JSON-Parsing (json.loads) zuständig.
         """

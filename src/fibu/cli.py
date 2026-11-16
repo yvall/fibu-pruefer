@@ -209,6 +209,54 @@ def _cmd_llm_pruefen(_a: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_eval_vorlage(a: argparse.Namespace) -> int:
+    """Erzeugt eine Vorlagendatei für die manuelle LLM-Evaluation von beleg-extraktion.
+
+    Schreibt je unlesbarem Beleg einen Eintrag mit leerem betrag/datum/nummer
+    in eine JSON-Datei. Der Benutzer füllt die Felder manuell aus; der Eval-Lauf
+    (evals/run_eval.py) liest sie über EVAL_REAL_DIR.
+    """
+    import json
+    import os
+
+    from fibu.ingest import load_context
+
+    period_dir = Path(str(a.ordner)).expanduser().resolve()
+    if not period_dir.is_dir():
+        raise FibuFehler(f"Ordner nicht gefunden: {period_dir}")
+
+    ctx = load_context(period_dir)
+    unlesbar = [b for b in ctx.belege if not b.alle and b.kind != "storno" and b.text.strip()]
+
+    vorlage = [
+        {
+            "beleg": b.rel,
+            "text": b.text[:8000],  # OCR-Volltext für den Eval-Lauf
+            "text_snippet": b.text[:300],  # Kurzvorschau zur manuellen Prüfung
+            "betrag": "",
+            "datum": "",
+            "nummer": "",
+        }
+        for b in unlesbar
+    ]
+
+    eval_dir_env = os.environ.get("EVAL_REAL_DIR", "")
+    if eval_dir_env:
+        ausgabe = Path(eval_dir_env) / f"vorlage_{period_dir.name}.json"
+        Path(eval_dir_env).mkdir(parents=True, exist_ok=True)
+    else:
+        ausgabe = period_dir / "eval_vorlage.json"
+
+    ausgabe.write_text(
+        json.dumps(vorlage, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"Vorlage mit {len(vorlage)} Beleg(en) geschrieben: {ausgabe}")
+    if not eval_dir_env:
+        print("Tipp: EVAL_REAL_DIR setzen, damit die Datei außerhalb des Repos liegt.")
+    print("Felder betrag/datum/nummer ausfüllen, dann: python evals/run_eval.py")
+    return 0
+
+
 def _cmd_monate(_a: argparse.Namespace) -> int:
     from legacy.fibu_pruefer.pipeline import find_bwa_pdf
 
@@ -246,6 +294,15 @@ def main() -> int:
     sub_llm = p_llm.add_subparsers(dest="llm_cmd", required=True)
     sub_llm.add_parser("pruefen", help="Konfiguration anzeigen, Ollama-Status und Modell prüfen")
 
+    p_eval = sub.add_parser("eval", help="Eval-Werkzeuge für LLM-Skills")
+    sub_eval = p_eval.add_subparsers(dest="eval_cmd", required=True)
+    p_eval_vl = sub_eval.add_parser(
+        "vorlage",
+        help="Vorlagendatei für beleg-extraktion-Eval erzeugen (Felder leer, manuell ausfüllen)",
+    )
+    p_eval_vl.add_argument("--ordner", metavar="PFAD", required=True,
+                           help="Pfad zum Periodenordner")
+
     p_fg = sub.add_parser("freigeben", help="pausierten Prüflauf freigeben oder sperren")
     gruppe_fg = p_fg.add_mutually_exclusive_group(required=True)
     gruppe_fg.add_argument("--ordner", metavar="PFAD", help="Pfad zum Periodenordner")
@@ -264,6 +321,8 @@ def main() -> int:
             return _cmd_freigeben(a)
         if a.cmd == "llm":
             return _cmd_llm_pruefen(a)
+        if a.cmd == "eval":
+            return _cmd_eval_vorlage(a)
         return _cmd_monate(a)
     except FibuFehler as e:
         print(f"Fehler: {e}", file=sys.stderr)

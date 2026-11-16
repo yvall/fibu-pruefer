@@ -129,19 +129,23 @@ def test_braucht_llm_true_echtes_llm_ruft_run_mit_llm_auf(tmp_path: Path) -> Non
     assert result.meta.get("llm_modell") == "mock"
 
 
-def test_signatur_erkennung_2params_ohne_braucht_llm_flag(tmp_path: Path) -> None:
-    """Skill mit 2 Parametern, aber braucht_llm=False – Signatur-Erkennung greift trotzdem."""
+def test_braucht_llm_false_mit_2params_ergibt_fehler_finding(tmp_path: Path) -> None:
+    """braucht_llm=False + run(ctx, llm): Runtime ruft run(ctx) auf → TypeError → Fehler-Finding.
+
+    Dispatch erfolgt ausschließlich über das braucht_llm-Frontmatter-Flag, nicht
+    über die Parameteranzahl. Skill mit llm: false muss run(ctx) implementieren.
+    """
     check_py = tmp_path / "check.py"
     check_py.write_text(
         "from fibu.contracts import Finding\n"
         "def run(ctx, llm):\n"
-        "    title = 'LLM-' + llm.modell\n"
-        "    return [Finding(rule='t', severity='info', title=title, detail='')]\n"
+        "    return [Finding(rule='t', severity='info', title='LLM-' + llm.modell, detail='')]\n"
     )
     mock_llm = _MockLlmClient()
     result = run_one_skill(_manifest(check_py, braucht_llm=False), _ctx(), mock_llm)
-    assert result.error is None
-    assert result.findings[0].title == "LLM-mock"
+    # run(ctx) mit 2-Parameter-Funktion → TypeError → Fehler-Finding
+    assert result.error is not None
+    assert result.findings[0].title == "Prüfung nicht durchgeführt"
 
 
 def test_backward_compat_kein_llm_arg(tmp_path: Path) -> None:

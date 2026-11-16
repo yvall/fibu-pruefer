@@ -1,5 +1,28 @@
 # Fortschritt Phase 3 – LLM-Skills
 
+## Schritt 3c – LLM-Skill `beleg-extraktion` ✓
+
+Neue Pakete und Änderungen:
+
+| Datei / Paket | Inhalt |
+|---|---|
+| `skills/beleg-extraktion/SKILL.md` | Frontmatter: `llm: true`, `runs_after: []`, `inputs: [context.belege]` |
+| `skills/beleg-extraktion/check.py` | `run(ctx, llm)` – verarbeitet nur Belege mit `alle==[]` und `kind!="storno"`; Guard `_wert_in_text()` für DE/EN-Betragsformate, Ziffern-Fallback; Pydantic-Validierung mit `json.loads`-Fallback (E8); Modell aus `llm.modell_fuer("beleg-extraktion")` |
+| `skills/beleg-extraktion/prompts/extraktion.md` | Prompt-Template mit `{{ belegtext }}`-Platzhalter, Daten-Delimiter gegen Injection |
+| `skills/beleg-extraktion/tests/test_beleg_extraktion.py` | 32 Tests: Guard, Parse-Fallback, Fehlerfälle, Injection-Fixture, parametrisierte Betragsformate |
+| `skills/beleg-extraktion/tests/fixtures/beleg_injection.txt` | Fixture mit Injection-Versuch für Guard-Test |
+| `src/fibu/skills_runtime/runner.py` | Dispatch ausschließlich per `manifest.braucht_llm`-Flag (nicht per Signatur); `import inspect` entfernt |
+| `src/fibu/llm/protocol.py` | `generiere()` erhält `*, modell: str = ""` (Protocol-Erweiterung) |
+| `src/fibu/llm/null.py` | `generiere()` erhält `*, modell: str = ""` |
+| `src/fibu/cli.py` | `fibu eval vorlage --ordner <Periodenordner>` – erzeugt JSON-Vorlage mit OCR-Texten; schreibt nach `EVAL_REAL_DIR` oder Periodenordner |
+| `evals/run_eval.py` | Eval-Skript: liest `EVAL_REAL_DIR/vorlage_*.json`, ruft beleg-extraktion auf, gibt Trefferquote je Feld (betrag/datum/nummer) aus |
+
+**Korrekturen aus 3b:** Dispatch per `braucht_llm`-Flag statt Signatur-Erkennung. `tests/unit/skills_runtime/test_runner_llm.py` angepasst.
+
+32 neue Tests (skills/beleg-extraktion). 330 Tests grün.
+
+---
+
 ## Schritt 3b – LLM-Integration in Skills-Runtime ✓
 
 Neue Pakete und Änderungen:

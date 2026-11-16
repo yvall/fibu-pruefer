@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib.abc
 import importlib.util
-import inspect
 import traceback
 from dataclasses import dataclass, field
 from typing import Any
@@ -75,9 +74,8 @@ def run_one_skill(
         loader.exec_module(mod)
         run_fn = mod.run
 
-        # E6: Signatur-Erkennung – skills mit llm-Parameter bekommen llm übergeben
-        params = list(inspect.signature(run_fn).parameters.keys())
-        if len(params) >= 2:
+        # E6: Dispatch ausschließlich per braucht_llm-Frontmatter-Flag (nicht per Signatur)
+        if manifest.braucht_llm:
             findings: list[Finding] = run_fn(ctx, effective_llm)
         else:
             findings = run_fn(ctx)
