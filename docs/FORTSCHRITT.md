@@ -113,11 +113,11 @@ Reihenfolge laut `docs/PROMPTS_PHASE_1.md`:
 | 1 | `summen-salden` | `check_summen_salden` | ✓ migriert |
 | 1 | `ergebnis-herleitung` | `check_ergebnis_aus_konten` | ✓ migriert |
 | 1 | `saldenrichtung` | `check_kontenrichtung` | ✓ migriert |
-| 2 | `wertenachweis-abgleich` | `check_wertenachweis` | offen |
-| 2 | `ustva-abgleich` | `check_ustva` | offen |
-| 2 | `opos-pruefung` | `check_opos` | offen |
-| 2 | `durchlaufende-posten` | `check_durchlaufend` | offen |
-| 2 | `entwicklung-ausreisser` | `check_entwicklung` | offen |
+| 2 | `wertenachweis-abgleich` | `check_wertenachweis` | ✓ migriert |
+| 2 | `ustva-abgleich` | `check_ustva` | ✓ migriert |
+| 2 | `opos-pruefung` | `check_opos` | ✓ migriert |
+| 2 | `durchlaufende-posten` | `check_durchlaufend` | ✓ migriert |
+| 2 | `entwicklung-ausreisser` | `check_entwicklung` | ✓ migriert |
 | 3 | `vormonat-fortschreibung` | `check_vormonat` | offen |
 | 4 | `kosten-deckung` | `check_deckung` | offen |
 | 4 | `umsatz-beweis` | `check_umsatz` | offen |

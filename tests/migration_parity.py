@@ -61,15 +61,16 @@ def assert_migration_parity(
     legacy_fn: Callable[[Any], Any],
     skill_run: Callable[[Context], list[Finding]],
     ctx: Context,
+    legacy_auswertung: Any = None,
 ) -> None:
     """Prüft, dass legacy_fn und skill_run dieselben Befunde liefern.
 
-    legacy_fn erhält ctx.auswertung per Duck-Typing: funktioniert, solange die
-    aufgerufene Funktion nur Felder nutzt, die in contracts.Auswertung vorhanden sind.
-    Verglichen werden severity, title und detail – nicht rule oder refs, da diese
-    zwischen Legacy (hat keines) und Skill (hat beide) strukturell verschieden sind.
+    legacy_fn erhält per Default ctx.auswertung per Duck-Typing. Wenn die Legacy-
+    Funktion Felder nutzt, die in contracts.Auswertung strukturell abweichen (z.B.
+    list[dict] statt list[Pydantic]), kann mit legacy_auswertung eine explizite
+    Legacy-Auswertung übergeben werden.
     """
-    legacy_result = legacy_fn(ctx.auswertung)
+    legacy_result = legacy_fn(legacy_auswertung if legacy_auswertung is not None else ctx.auswertung)
     expected = _normalize_legacy(legacy_result)
     actual = _normalize_new(skill_run(ctx))
 

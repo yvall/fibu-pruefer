@@ -14,3 +14,17 @@ saldenrichtung_skip:              # Konten mit typischerweise atypischer Saldenr
   - "4946"
   - "1370"
   - "6850_"
+
+# Schwellen (entwicklung-ausreisser)
+personalkosten_ausreisser_schwelle: 10000  # Personalkosten-Abweichung ab der ein Info-Befund entsteht
+
+# Schwellen (durchlaufende-posten)
+ueberfaellig_tage: 60   # Alter eines offenen Durchlaufpostens in Tagen bis zum Info-Befund
+
+# SKR04-Konten für UStVA-Abgleich (ustva-abgleich)
+ustva_konto_ust_19: "3806"
+ustva_konto_vorsteuer: ["1406", "1401"]
+ustva_konto_ust_13b: "3837"
+ustva_konto_vorsteuer_13b: "1407"
+ustva_konto_zahlung: "3820"
+ustva_konto_verbindlichkeit: "3860"
