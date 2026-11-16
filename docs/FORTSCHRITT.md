@@ -118,7 +118,7 @@ Reihenfolge laut `docs/PROMPTS_PHASE_1.md`:
 | 2 | `opos-pruefung` | `check_opos` | ✓ migriert |
 | 2 | `durchlaufende-posten` | `check_durchlaufend` | ✓ migriert |
 | 2 | `entwicklung-ausreisser` | `check_entwicklung` | ✓ migriert |
-| 3 | `vormonat-fortschreibung` | `check_vormonat` | offen |
+| 3 | `vormonat-fortschreibung` | `check_vormonat` | ✓ migriert |
 | 4 | `kosten-deckung` | `check_deckung` | offen |
 | 4 | `umsatz-beweis` | `check_umsatz` | offen |
 | 4 | `belege-abgleich` | `check_belege` | offen |
