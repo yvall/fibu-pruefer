@@ -7,6 +7,17 @@ import yaml
 from pydantic import BaseModel, field_validator
 
 
+class StoreConfig(BaseModel):
+    sqlite_pfad: Path = Path("~/.fibu/laeufe.db")
+
+    @field_validator("sqlite_pfad", mode="before")
+    @classmethod
+    def _expandiere_tilde(cls, v: object) -> object:
+        if isinstance(v, (str, Path)):
+            return Path(str(v)).expanduser()
+        return v
+
+
 class DatenConfig(BaseModel):
     wurzel: Path | None = None
     bwa_ordner: str = "BWA"
@@ -22,6 +33,7 @@ class DatenConfig(BaseModel):
 
 class LokaleConfig(BaseModel):
     daten: DatenConfig = DatenConfig()
+    store: StoreConfig = StoreConfig()
 
     @classmethod
     def laden(cls, config_datei: Path | None = None) -> LokaleConfig:

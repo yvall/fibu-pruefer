@@ -9,3 +9,8 @@ daten:
   wurzel: ~/Dokumente/Buchhaltung/IF2IT   # Verzeichnis mit den Monatsordnern
   bwa_ordner: BWA                          # Unterordner je Monat mit dem BWA-PDF
   bericht_ordner: Pruefbericht             # Unterordner für erzeugte Berichte
+
+store:
+  # ACHTUNG: Diese Datei enthält echte Finanzdaten (Befunde, Kontext).
+  # Sie wird mit Rechten 0600 angelegt und darf nicht ins Repository.
+  sqlite_pfad: ~/.fibu/laeufe.db

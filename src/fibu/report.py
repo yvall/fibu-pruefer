@@ -23,6 +23,112 @@ def _eur(v: Decimal | None) -> str:
     return s.replace(",", "X").replace(".", ",").replace("X", ".") + " €"
 
 
+def ergebnisaussage(a: Auswertung, results: list[SkillResult]) -> list[tuple[str, str, str]]:
+    """Kernaussagen (Prüffrage, Ergebnis, Status) – analog zum Legacy-Bericht.
+
+    Leitet den Status aus den Skill-Findings ab statt aus CheckResult-Metadaten.
+    """
+    by: dict[str, SkillResult] = {r.skill_id: r for r in results}
+
+    def _sev_of(*skill_ids: str) -> str:
+        sevs = {f.severity for sid in skill_ids for f in (by[sid].findings if sid in by else [])}
+        if "fehler" in sevs:
+            return "fehler"
+        if "pruefen" in sevs:
+            return "pruefen"
+        return "ok"
+
+    out: list[tuple[str, str, str]] = []
+
+    # 1. Rechenwege korrekt?
+    rech = ["bwa-rechenwege", "wertenachweis-abgleich", "summen-salden", "ergebnis-herleitung"]
+    bad_rech = [f for sid in rech for f in (by[sid].findings if sid in by else []) if f.severity == "fehler"]
+    mon_eur = _eur((a.bwa.get("Vorläufiges Ergebnis") or (None, None))[0])
+    ytd_eur = _eur((a.bwa.get("Vorläufiges Ergebnis") or (None, None))[1])
+    _rech_ok = (
+        "Ja – BWA-Rechenwege, Wertenachweis, Summen/Salden und die unabhängige"
+        " Herleitung aus den GuV-Konten stimmen überein."
+    )
+    if not bad_rech:
+        out.append((
+            f"Ist das Ergebnis rechnerisch richtig? (Monat {mon_eur}, Jahr {ytd_eur})",
+            _rech_ok,
+            "ok",
+        ))
+    else:
+        out.append((
+            f"Ist das Ergebnis rechnerisch richtig? (Monat {mon_eur}, Jahr {ytd_eur})",
+            f"NEIN – {len(bad_rech)} Abweichung(en): " + "; ".join(f.title for f in bad_rech[:3]),
+            "fehler",
+        ))
+
+    # 2. Jahresergebnis zum Vormonat?
+    vm = by.get("vormonat-fortschreibung")
+    if vm is not None:
+        vm_fehler = [f for f in vm.findings if f.severity == "fehler"]
+        if vm_fehler:
+            j = next((f for f in vm_fehler if "Jahresergebnis" in f.title), vm_fehler[0])
+            out.append((
+                "Passt das Jahresergebnis zum Vormonat?",
+                j.detail.split(" – es wurde")[0] + " → nachträgliche Buchungen in Vormonaten.",
+                "fehler",
+            ))
+        elif any(f.title.startswith("Keine Vormonats") for f in vm.findings):
+            out.append(("Passt das Jahresergebnis zum Vormonat?",
+                        "Kein Vormonat vorhanden – Prüfung übersprungen.", "info"))
+        else:
+            out.append((
+                "Passt das Jahresergebnis zum Vormonat?",
+                "Ja – kum. Vormonat + Monat = kum. Berichtsmonat in allen BWA-Zeilen und Konten.",
+                "ok",
+            ))
+
+    # 3. Umsatz belegt?
+    u = by.get("umsatz-beweis")
+    if u is not None:
+        u_st = _sev_of("umsatz-beweis")
+        if u_st == "ok":
+            out.append(("Ist der Umsatz belegt?", "Umsatz vollständig durch Belege belegt.", "ok"))
+        else:
+            out.append((
+                "Ist der Umsatz belegt?",
+                f"Nein/teilweise – {len(u.findings)} Befund(e). Siehe Befunde zu umsatz-beweis.",
+                u_st,
+            ))
+
+    # 4. Kosten belegt?
+    d = by.get("kosten-deckung")
+    if d is not None:
+        d_st = _sev_of("kosten-deckung")
+        out.append((
+            "Sind die Kosten belegt?",
+            "Eingangsbelege geprüft." if d_st == "ok"
+            else f"Auffälligkeiten – {len(d.findings)} Befund(e).",
+            d_st,
+        ))
+
+    # 5. UStVA korrekt?
+    # Analog zur Legacy: "fehler" nur wenn tatsächlich Fehler; pruefen-Hinweise
+    # (z.B. Konto 3820 ≠ Kz.83) gelten als "ok" für die Ergebnisaussage.
+    us = by.get("ustva-abgleich")
+    if us is not None:
+        us_has_fehler = any(f.severity == "fehler" for f in us.findings)
+        if not us_has_fehler:
+            out.append((
+                "Stimmt die Umsatzsteuer-Voranmeldung?",
+                "Kz. 81/66/46/67/83 stimmen mit den Konten überein; Zahllast stimmt.",
+                "ok",
+            ))
+        else:
+            out.append((
+                "Stimmt die Umsatzsteuer-Voranmeldung?",
+                "Abweichungen – siehe Befunde zu ustva-abgleich.",
+                "fehler",
+            ))
+
+    return out
+
+
 def overall_severity(results: list[SkillResult]) -> str:
     sevs = {f.severity for r in results for f in r.findings}
     if "fehler" in sevs:
@@ -57,6 +163,16 @@ def to_markdown(a: Auswertung, results: list[SkillResult]) -> str:
         ),
         "",
     ]
+
+    # Ergebnisaussage
+    ea = ergebnisaussage(a, results)
+    if ea:
+        icon_ea = {"fehler": "🔴", "pruefen": "🟡", "info": "🔵", "ok": "🟢"}
+        lines += ["## Ergebnisaussage", ""]
+        for frage, antwort, status in ea:
+            lines.append(f"**{icon_ea.get(status, '')} {frage}**  ")
+            lines.append(f"{antwort}")
+            lines.append("")
 
     # Kennzahlen aus BWA
     kz_lines: list[str] = []
@@ -139,9 +255,10 @@ def to_html(a: Auswertung, results: list[SkillResult]) -> str:
             in_table = False
             if line:
                 body_lines.append(f"<p>{escaped}</p>")
-        elif line.startswith("- **") and "**" in line[2:]:
-            body_lines.append(f"<li><strong>{escaped[6:escaped.index('**', 6)]}</strong>"
-                               f"{escaped[escaped.index('**', 6)+2:]}</li>")
+        elif line.startswith("- **") and "**" in line[4:]:
+            close = escaped.index("**", 4)
+            body_lines.append(f"<li><strong>{escaped[4:close]}</strong>"
+                               f"{escaped[close + 2:]}</li>")
         elif line.startswith("- "):
             body_lines.append(f"<li>{_html.escape(line[2:])}</li>")
         elif line.startswith("**") and line.endswith("**"):

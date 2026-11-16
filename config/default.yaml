@@ -1,3 +1,6 @@
+# store.sqlite_pfad: in config/lokal.yaml setzen (Standard: ~/.fibu/laeufe.db).
+# ACHTUNG: Die Datei enthält echte Finanzdaten; Rechte 0600, außerhalb des Repos.
+
 # Schwellenwerte für alle Prüfregeln – werden in ctx.config geladen (Phase 2).
 toleranz: 0.02       # Toleranzgrenze aller Rechenweg-Prüfungen in €
 

@@ -60,7 +60,7 @@ def _cmd_pruefen(a: argparse.Namespace) -> int:
     if a.legacy:
         return _cmd_pruefen_legacy(period_dir, a)
 
-    return _cmd_pruefen_skills(period_dir)
+    return _cmd_pruefen_skills(period_dir, mit_mail=bool(a.mail))
 
 
 def _cmd_pruefen_legacy(period_dir: Path, a: argparse.Namespace) -> int:
@@ -75,20 +75,57 @@ def _cmd_pruefen_legacy(period_dir: Path, a: argparse.Namespace) -> int:
     return {"ok": 0, "pruefen": 1, "fehler": 2}.get(str(res.status), 2)
 
 
-def _cmd_pruefen_skills(period_dir: Path) -> int:
+def _cmd_pruefen_skills(period_dir: Path, mit_mail: bool = False) -> int:
     """Prüfung über den Graph (Skills-Runtime)."""
     from fibu.graph.runner import run_pruefung
 
     try:
-        result = run_pruefung(period_dir, skills_dir=Path("skills"))
+        result = run_pruefung(period_dir, skills_dir=Path("skills"), mit_mail=mit_mail)
     except FileNotFoundError as exc:
         raise FibuFehler(str(exc))
+
+    if "__interrupt__" in result:
+        lauf_id = result["lauf_id"]
+        print("Lauf pausiert – Freigabe erforderlich.")
+        print(f"Lauf-ID : {lauf_id}")
+        print(f"Bericht : {result.get('bericht_md_pfad', '–')}")
+        print("Freigabe: fibu freigeben --ordner <pfad> --freigabe ja")
+        return 1
 
     sev = result["gesamtstatus"]
     md_path = result["bericht_md_pfad"]
     html_path = result["bericht_html_pfad"]
     print(f"{sev.upper()}  ->  {md_path}\n           {html_path}")
     return {"ok": 0, "pruefen": 1, "fehler": 2}.get(sev, 2)
+
+
+def _cmd_freigeben(a: argparse.Namespace) -> int:
+    from fibu.config import LokaleConfig
+    from fibu.contracts import Entscheidung
+    from fibu.graph.runner import freigeben_lauf
+    from fibu.store import LaufStore
+
+    if a.ordner:
+        period_dir = Path(str(a.ordner)).expanduser().resolve()
+    else:
+        cfg = LokaleConfig.laden()
+        root = _wurzel_aus_config(cfg)
+        period_dir = _monat_aufloesen(root, str(a.monat))
+
+    cfg = LokaleConfig.laden()
+    store = LaufStore(cfg.store.sqlite_pfad)
+    lauf = store.neuester_offener_lauf(str(period_dir))
+    if lauf is None:
+        raise FibuFehler(f"Kein offener Lauf für {period_dir}", exit_code=1)
+
+    freigabe = "freigegeben" if a.freigabe == "ja" else "gesperrt"
+    entscheidung = Entscheidung(freigabe=freigabe, kommentar=a.kommentar or "")  # type: ignore[arg-type]
+
+    result = freigeben_lauf(lauf.lauf_id, entscheidung, store)
+    print(f"Lauf {lauf.lauf_id[:8]}… {freigabe}.")
+    if result.get("bericht_md_pfad"):
+        print(f"Bericht: {result['bericht_md_pfad']}")
+    return 0
 
 
 def _cmd_monate(_a: argparse.Namespace) -> int:
@@ -119,13 +156,24 @@ def main() -> int:
     gruppe.add_argument("--ordner", metavar="PFAD", help="voller Pfad zum Periodenordner")
     p1.add_argument("--llm", action="store_true", help="Zusammenfassung per lokalem Ollama formulieren (nur mit --legacy)")
     p1.add_argument("--legacy", action="store_true", help="Legacy-Pipeline statt Skills-Runtime verwenden")
+    p1.add_argument("--mail", action="store_true", help="Freigabe-Interrupt aktivieren (pausiert bis 'fibu freigeben')")
 
     sub.add_parser("monate", help="Periodenordner der Wurzel auflisten")
+
+    p_fg = sub.add_parser("freigeben", help="pausierten Prüflauf freigeben oder sperren")
+    gruppe_fg = p_fg.add_mutually_exclusive_group(required=True)
+    gruppe_fg.add_argument("--ordner", metavar="PFAD", help="Pfad zum Periodenordner")
+    gruppe_fg.add_argument("--monat", metavar="NAME", help="Monatsordner (z. B. '08')")
+    p_fg.add_argument("--freigabe", choices=["ja", "nein"], default="ja",
+                      help="Freigabe erteilen (ja) oder sperren (nein)")
+    p_fg.add_argument("--kommentar", metavar="TEXT", default="", help="Optionaler Kommentar")
 
     a = ap.parse_args()
     try:
         if a.cmd == "pruefen":
             return _cmd_pruefen(a)
+        if a.cmd == "freigeben":
+            return _cmd_freigeben(a)
         return _cmd_monate(a)
     except FibuFehler as e:
         print(f"Fehler: {e}", file=sys.stderr)

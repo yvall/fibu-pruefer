@@ -45,6 +45,26 @@ Testanforderung: Alle `id`-Werte in einem Lauf sind eindeutig.
 `store.sqlite_pfad`-Schlüssel. Fallback: `~/.fibu/laeufe.db`.
 `config/default.yaml` enthält nur den Platzhalter-Kommentar.
 
+## Schritt 2b – Persistenz, Finding-IDs, Freigabe ✓
+
+Neue Pakete und Änderungen:
+
+| Datei / Paket | Inhalt |
+|---|---|
+| `src/fibu/contracts/finding.py` | `Finding.id` als `@computed_field`; `id_suffix` für Runtime-Deduplication; `schema_version = "2"`. Normalisierung: Ziffern und Beträge werden aus Formel/Titel-Fallback entfernt (gleiches Muster, anderer Betrag → gleiche ID). |
+| `src/fibu/store/` | `LaufStore` (SQLite, Tabellen `laeufe`, `kontext`, `findings`); `Context`-JSON-Roundtrip via Pydantic v2 `model_dump_json()`/`model_validate_json()`; Dateirechte 0600 bei Neuanlage. **ACHTUNG:** Datei enthält echte Finanzdaten – Pfad aus `config/lokal.yaml` (`store.sqlite_pfad`), Standard: `~/.fibu/laeufe.db`. |
+| `src/fibu/graph/state.py` | `lauf_id` und `mit_mail` als Pflichtfelder; kein `kontext` im State (E3); `entscheidung: Entscheidung` optional. |
+| `src/fibu/graph/nodes.py` | Alle Knoten store-aware (Closures); `bewerte` dedupliciert Finding-IDs (Suffix `#2`, `#3`…) und erzeugt info-Finding bei Kollision; `warte_auf_freigabe` ruft `interrupt()` nur bei `mit_mail=True`. |
+| `src/fibu/graph/graph.py` | `create_graph(store, checkpointer)`; MSGPACK-Allowlist für `SkillResult`/`Finding`/`Calc`/`Ref` beim SqliteSaver. |
+| `src/fibu/graph/runner.py` | `run_pruefung()` mit UUID-Lauf-ID, `MemorySaver`/`SqliteSaver` je nach `mit_mail`; `freigeben_lauf()` resume via `Command(resume=…)`. |
+| `src/fibu/cli.py` | `--mail` Flag; `freigeben`-Subkommando (sucht neuesten offenen Lauf). |
+| `src/fibu/config.py` | `StoreConfig` mit `sqlite_pfad`. |
+| `src/fibu/report.py` | Bugfix: HTML-Offset-Fehler bei `- **…**`-Zeilen (Position 4 statt 6). |
+
+31 neue Tests (unit/contracts, unit/store, unit/graph, integration). 218 Tests grün.
+
+---
+
 ## Schritt 2a – Minimaler Graph ✓
 
 `src/fibu/graph/` mit typisiertem `PruefState` (TypedDict), vier Knoten
