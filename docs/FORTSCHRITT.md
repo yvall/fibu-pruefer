@@ -119,10 +119,10 @@ Reihenfolge laut `docs/PROMPTS_PHASE_1.md`:
 | 2 | `durchlaufende-posten` | `check_durchlaufend` | ✓ migriert |
 | 2 | `entwicklung-ausreisser` | `check_entwicklung` | ✓ migriert |
 | 3 | `vormonat-fortschreibung` | `check_vormonat` | ✓ migriert |
-| 4 | `kosten-deckung` | `check_deckung` | offen |
-| 4 | `umsatz-beweis` | `check_umsatz` | offen |
-| 4 | `belege-abgleich` | `check_belege` | offen |
-| 5 | `klaerungsliste` | `check_klaerung` | offen |
+| 4 | `kosten-deckung` | `check_deckung` | ✓ migriert |
+| 4 | `umsatz-beweis` | `check_umsatz` | ✓ migriert |
+| 4 | `belege-abgleich` | `check_belege` | ✓ migriert |
+| 5 | `klaerungsliste` | `check_klaerung` | ✓ migriert |
 
 Strategie: jeder Skill beginnt als **Thin Wrapper** (ruft Legacy-Funktion auf,
 konvertiert `legacy.Finding → contracts.Finding`). Der Golden-Test muss nach
