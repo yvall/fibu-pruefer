@@ -48,12 +48,14 @@ def _wurzel_aus_config(config: LokaleConfig) -> Path:
 
 
 def _cmd_pruefen(a: argparse.Namespace) -> int:
+    cfg = LokaleConfig.laden()
+    print(f"Konfiguration: {cfg.config_quelle}")
+
     if a.ordner:
         period_dir = Path(str(a.ordner)).expanduser().resolve()
         if not period_dir.is_dir():
             raise FibuFehler(f"Ordner nicht gefunden: {period_dir}")
     else:
-        cfg = LokaleConfig.laden()
         root = _wurzel_aus_config(cfg)
         period_dir = _monat_aufloesen(root, str(a.monat))
 
@@ -100,19 +102,19 @@ def _cmd_pruefen_skills(period_dir: Path, mit_mail: bool = False) -> int:
 
 
 def _cmd_freigeben(a: argparse.Namespace) -> int:
-    from fibu.config import LokaleConfig
     from fibu.contracts import Entscheidung
     from fibu.graph.runner import freigeben_lauf
     from fibu.store import LaufStore
 
+    cfg = LokaleConfig.laden()
+    print(f"Konfiguration: {cfg.config_quelle}")
+
     if a.ordner:
         period_dir = Path(str(a.ordner)).expanduser().resolve()
     else:
-        cfg = LokaleConfig.laden()
         root = _wurzel_aus_config(cfg)
         period_dir = _monat_aufloesen(root, str(a.monat))
 
-    cfg = LokaleConfig.laden()
     store = LaufStore(cfg.store.sqlite_pfad)
     lauf = store.neuester_offener_lauf(str(period_dir))
     if lauf is None:
@@ -133,11 +135,11 @@ def _cmd_freigeben(a: argparse.Namespace) -> int:
 
 def _cmd_llm_pruefen(_a: argparse.Namespace) -> int:
     """Zeigt die LLM-Konfiguration und prüft Ollama-Erreichbarkeit und Modell-Status."""
-
-    from fibu.config import LokaleConfig
     from fibu.llm.ollama import OllamaClient
 
     cfg = LokaleConfig.laden()
+    print(f"Konfiguration: {cfg.config_quelle}")
+    print()
     llm = cfg.llm
 
     print("Konfiguration")
@@ -201,6 +203,7 @@ def _cmd_monate(_a: argparse.Namespace) -> int:
     from legacy.fibu_pruefer.pipeline import find_bwa_pdf
 
     config = LokaleConfig.laden()
+    print(f"Konfiguration: {config.config_quelle}")
     root = _wurzel_aus_config(config)
     ordner = _perioden_ordner(root)
     if not ordner:
