@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import importlib.abc
 import importlib.util
+import inspect
 import traceback
 from dataclasses import dataclass, field
 from typing import Any
 
 from fibu.contracts import Context, Finding
+from fibu.llm import LlmClient, NullLlmClient
 
 from .loader import SkillManifest
 
@@ -21,8 +23,31 @@ class SkillResult:
     error: str | None = None
 
 
-def run_one_skill(manifest: SkillManifest, ctx: Context) -> SkillResult:
+def run_one_skill(
+    manifest: SkillManifest,
+    ctx: Context,
+    llm: LlmClient | None = None,
+) -> SkillResult:
     """Führt einen einzelnen Skill aus. Fehler erzeugen ein Finding und brechen den Lauf nicht ab."""
+    effective_llm: LlmClient = llm if llm is not None else NullLlmClient()
+
+    # E7: Fallback-Check vor Modulimport – LLM-Skill ohne LLM gibt info-Finding
+    if manifest.braucht_llm and isinstance(effective_llm, NullLlmClient):
+        return SkillResult(
+            skill_id=manifest.skill_id,
+            findings=[
+                Finding(
+                    rule=manifest.skill_id,
+                    severity="info",
+                    title="LLM nicht konfiguriert",
+                    detail=(
+                        f"Skill {manifest.skill_id} benötigt ein LLM-Modell "
+                        f"– kein Modell konfiguriert."
+                    ),
+                )
+            ],
+        )
+
     if not manifest.check_path.exists():
         return SkillResult(
             skill_id=manifest.skill_id,
@@ -49,7 +74,14 @@ def run_one_skill(manifest: SkillManifest, ctx: Context) -> SkillResult:
         mod = importlib.util.module_from_spec(spec)
         loader.exec_module(mod)
         run_fn = mod.run
-        findings: list[Finding] = run_fn(ctx)
+
+        # E6: Signatur-Erkennung – skills mit llm-Parameter bekommen llm übergeben
+        params = list(inspect.signature(run_fn).parameters.keys())
+        if len(params) >= 2:
+            findings: list[Finding] = run_fn(ctx, effective_llm)
+        else:
+            findings = run_fn(ctx)
+
         meta: dict[str, Any] = getattr(mod, "_meta", {})
         return SkillResult(skill_id=manifest.skill_id, findings=findings, meta=meta)
     except Exception as exc:  # noqa: BLE001

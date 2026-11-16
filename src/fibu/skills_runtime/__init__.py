@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fibu.contracts import Context
 
 from .loader import SkillManifest, load_manifests
 from .runner import SkillResult, run_one_skill
 from .scheduler import topological_waves
+
+if TYPE_CHECKING:
+    from fibu.llm import LlmClient
 
 __all__ = [
     "SkillManifest",
@@ -18,11 +22,16 @@ __all__ = [
 ]
 
 
-def run_skills(ctx: Context, skills_dir: Path) -> list[SkillResult]:
+def run_skills(
+    ctx: Context,
+    skills_dir: Path,
+    llm: LlmClient | None = None,
+) -> list[SkillResult]:
     """Lädt alle Skills, sortiert nach Abhängigkeiten und führt sie wellenweise parallel aus.
 
     Ein fehlerhafter Skill erzeugt ein Finding „Prüfung nicht durchgeführt" und
     bricht den Gesamtlauf nicht ab.
+    llm: LlmClient-Instanz für LLM-Skills; None → NullLlmClient (kein LLM-Aufruf).
     """
     manifests = load_manifests(skills_dir)
     if not manifests:
@@ -31,7 +40,11 @@ def run_skills(ctx: Context, skills_dir: Path) -> list[SkillResult]:
     results: list[SkillResult] = []
     with ThreadPoolExecutor() as pool:
         for wave in waves:
-            futures = {pool.submit(run_one_skill, m, ctx): m for m in wave}
+            futures = {pool.submit(run_one_skill, m, ctx, llm): m for m in wave}
             for future in futures:
-                results.append(future.result())
+                result = future.result()
+                results.append(result)
+                # vormonat-fortschreibung schreibt changed_accounts für klaerungsliste
+                if "changed" in result.meta:
+                    ctx.changed_accounts = result.meta["changed"]
     return results

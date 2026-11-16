@@ -6,6 +6,7 @@ graph.py wickelt sie in Closures, die den store einfangen.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from langgraph.types import interrupt
 
@@ -16,6 +17,10 @@ from fibu.skills_runtime import SkillResult, run_skills
 from fibu.store import LaufStore
 
 from .state import PruefState
+
+if TYPE_CHECKING:
+    from fibu.ingest.mail import MailSender
+    from fibu.llm import LlmClient
 
 # ---------------------------------------------------------------------------
 # Hilfsfunktion: ID-Kollisionen auflösen
@@ -78,10 +83,14 @@ def lade_kontext(state: PruefState, store: LaufStore) -> dict[str, object]:
     return {}
 
 
-def fuehre_skills_aus(state: PruefState, store: LaufStore) -> dict[str, object]:
+def fuehre_skills_aus(
+    state: PruefState,
+    store: LaufStore,
+    llm: LlmClient | None = None,
+) -> dict[str, object]:
     ctx = store.lade_kontext(state["lauf_id"])
     skills_dir = Path(state["skills_dir"])
-    results: list[SkillResult] = run_skills(ctx, skills_dir=skills_dir)
+    results: list[SkillResult] = run_skills(ctx, skills_dir=skills_dir, llm=llm)
     return {"skill_results": results}
 
 
@@ -140,3 +149,37 @@ def warte_auf_freigabe(state: PruefState, store: LaufStore) -> dict[str, object]
         else resumed
     )
     return {"entscheidung": entscheidung}
+
+
+def versand(
+    state: PruefState,
+    store: LaufStore,
+    mail_sender: MailSender,
+) -> dict[str, object]:
+    """Sendet den Prüfbericht nach Freigabe – genau einmal (idempotent).
+
+    Ohne Freigabe (gesperrt oder kein --mail): No-op.
+    SMTP-Exceptions propagieren; versand_ok wird nur bei Erfolg gesetzt.
+    """
+    if store.ist_versand_ok(state["lauf_id"]):
+        return {"versand_ok": True}
+
+    entscheidung = state.get("entscheidung")
+    if not entscheidung or entscheidung.freigabe != "freigegeben":
+        return {"versand_ok": False}
+
+    ctx = store.lade_kontext(state["lauf_id"])
+    a = ctx.auswertung
+    betreff = (
+        f"Prüfbericht Buchhaltung {a.month:02d}/{a.year}: "
+        f"{state.get('gesamtstatus', '').upper()}"
+    )
+    text = Path(state["bericht_md_pfad"]).read_text(encoding="utf-8")
+    mail_sender.sende_bericht(
+        betreff=betreff,
+        text=text,
+        md_pfad=Path(state["bericht_md_pfad"]),
+        html_pfad=Path(state["bericht_html_pfad"]),
+    )
+    store.setze_versand_ok(state["lauf_id"])
+    return {"versand_ok": True}

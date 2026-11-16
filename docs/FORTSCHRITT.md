@@ -1,5 +1,24 @@
 # Fortschritt Phase 3 – LLM-Skills
 
+## Schritt 3b – LLM-Integration in Skills-Runtime ✓
+
+Neue Pakete und Änderungen:
+
+| Datei / Paket | Inhalt |
+|---|---|
+| `src/fibu/skills_runtime/loader.py` | `SkillManifest` erhält Feld `braucht_llm: bool = False`; Frontmatter-Parser liest `llm: true/false` |
+| `src/fibu/skills_runtime/runner.py` | `run_one_skill(manifest, ctx, llm)` – neuer optionaler Parameter `llm: LlmClient \| None = None`; Fallback-Finding (severity=„info") wenn `braucht_llm` und `isinstance(llm, NullLlmClient)` **vor** Modulimport; Signatur-Erkennung via `inspect.signature(run_fn)` – 2-Parameter-Funktion bekommt `llm` übergeben |
+| `src/fibu/skills_runtime/__init__.py` | `run_skills(ctx, skills_dir, llm=None)` – neuer `llm`-Parameter; forwarded an `run_one_skill` |
+| `src/fibu/graph/nodes.py` | Knoten `fuehre_skills_aus` nimmt `llm` aus Closure und übergibt an `run_skills()` |
+| `src/fibu/graph/graph.py` | `create_graph(store, checkpointer, mail_sender, llm)` – neuer `llm`-Parameter; Closure einfängt `llm` |
+| `src/fibu/graph/runner.py` | `run_pruefung(ordner, …, llm=None)` – lädt `OllamaClient` oder `NullLlmClient` aus `LokaleConfig` wenn `llm=None` |
+| `src/fibu/cli.py` | `_cmd_pruefen_skills` instanziiert `LlmClient` aus Konfiguration vor `run_pruefung` |
+| `src/fibu/llm/ollama.py` | `generiere()` erhält optionalen Keyword-Parameter `modell: str = ""` (überschreibt `self._config.modell` für diesen Aufruf) |
+
+28 neue Tests (unit/skills_runtime, unit/llm). 298 Tests grün.
+
+---
+
 ## Schritt 3a – LLM-Adapter ✓
 
 Neue Pakete und Änderungen:

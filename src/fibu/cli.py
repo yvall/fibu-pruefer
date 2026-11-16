@@ -80,9 +80,19 @@ def _cmd_pruefen_legacy(period_dir: Path, a: argparse.Namespace) -> int:
 def _cmd_pruefen_skills(period_dir: Path, mit_mail: bool = False) -> int:
     """Prüfung über den Graph (Skills-Runtime)."""
     from fibu.graph.runner import run_pruefung
+    from fibu.llm import LlmClient
+    from fibu.llm.null import NullLlmClient
+
+    cfg = LokaleConfig.laden()
+    llm: LlmClient
+    if cfg.llm.modell:
+        from fibu.llm.ollama import OllamaClient
+        llm = OllamaClient.aus_config(cfg.llm)
+    else:
+        llm = NullLlmClient()
 
     try:
-        result = run_pruefung(period_dir, skills_dir=Path("skills"), mit_mail=mit_mail)
+        result = run_pruefung(period_dir, skills_dir=Path("skills"), mit_mail=mit_mail, llm=llm)
     except FileNotFoundError as exc:
         raise FibuFehler(str(exc))
 

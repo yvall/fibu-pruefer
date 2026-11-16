@@ -18,6 +18,7 @@ class SkillManifest:
     severity_default: str = "fehler"
     inputs: list[str] = field(default_factory=list)
     check_path: Path = field(default_factory=Path)
+    braucht_llm: bool = False
 
 
 def _parse_frontmatter(text: str) -> dict[str, Any]:
@@ -50,6 +51,7 @@ def load_manifests(skills_dir: Path) -> list[SkillManifest]:
                 severity_default=str(fm.get("severity_default") or "fehler"),
                 inputs=[str(x) for x in (fm.get("inputs") or [])],
                 check_path=skill_md.parent / "check.py",
+                braucht_llm=bool(fm.get("llm")),
             )
         )
     return manifests

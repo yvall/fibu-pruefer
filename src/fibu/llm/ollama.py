@@ -42,19 +42,23 @@ class OllamaClient:
         self,
         prompt: str,
         json_schema: dict[str, Any] | None = None,
+        *,
+        modell: str = "",
     ) -> str | None:
         """Schickt prompt an /api/generate. Gibt den Response-String oder None zurück.
 
         json_schema: Wenn angegeben, wird er als 'format'-Parameter mitgeschickt
         (Ollama Structured Output). Ob das Modell ihn unterstützt, prüft 'fibu llm pruefen'.
+        modell: Überschreibt self._config.modell für diesen Aufruf (E11 – Skill-spezifisches Modell).
         JSON-Parsing ist Aufgabe des Aufrufers.
         """
-        if not self._config.modell:
+        effektives_modell = modell or self._config.modell
+        if not effektives_modell:
             log.debug("Kein LLM-Modell konfiguriert – Aufruf übersprungen")
             return None
 
         body: dict[str, Any] = {
-            "model": self._config.modell,
+            "model": effektives_modell,
             "prompt": prompt,
             "stream": False,
             "options": {"temperature": self._config.temperatur},
@@ -77,8 +81,8 @@ class OllamaClient:
             if exc.code == 404 or "not found" in fehler_body.lower():
                 log.warning(
                     "Modell '%s' nicht installiert – installieren mit: ollama pull %s",
-                    self._config.modell,
-                    self._config.modell,
+                    effektives_modell,
+                    effektives_modell,
                 )
             else:
                 log.warning("Ollama HTTP %d: %s", exc.code, fehler_body[:200])
