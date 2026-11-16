@@ -76,28 +76,17 @@ def _cmd_pruefen_legacy(period_dir: Path, a: argparse.Namespace) -> int:
 
 
 def _cmd_pruefen_skills(period_dir: Path) -> int:
-    """Prüfung über die neue Skills-Runtime."""
-    from fibu.ingest import load_context
-    from fibu.report import overall_severity, to_html, to_markdown
-    from fibu.skills_runtime import run_skills
+    """Prüfung über den Graph (Skills-Runtime)."""
+    from fibu.graph.runner import run_pruefung
 
     try:
-        ctx = load_context(period_dir)
+        result = run_pruefung(period_dir, skills_dir=Path("skills"))
     except FileNotFoundError as exc:
         raise FibuFehler(str(exc))
 
-    results = run_skills(ctx, skills_dir=Path("skills"))
-
-    out_dir = period_dir / "Pruefbericht"
-    out_dir.mkdir(exist_ok=True)
-    a = ctx.auswertung
-    stem = f"Pruefbericht_{a.year}-{a.month:02d}"
-    md_path = out_dir / f"{stem}.md"
-    html_path = out_dir / f"{stem}.html"
-    md_path.write_text(to_markdown(a, results), encoding="utf-8")
-    html_path.write_text(to_html(a, results), encoding="utf-8")
-
-    sev = overall_severity(results)
+    sev = result["gesamtstatus"]
+    md_path = result["bericht_md_pfad"]
+    html_path = result["bericht_html_pfad"]
     print(f"{sev.upper()}  ->  {md_path}\n           {html_path}")
     return {"ok": 0, "pruefen": 1, "fehler": 2}.get(sev, 2)
 

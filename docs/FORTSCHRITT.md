@@ -12,6 +12,48 @@
 
 ---
 
+# Fortschritt Phase 2 – Graph
+
+## Entscheidungen für 2b und 2c
+
+Diese Festlegungen gelten ab Phase 2b und sind bei der Umsetzung verbindlich:
+
+**E1 – Knotenreihenfolge und Interrupt-Bedingung**
+Reihenfolge: `bewerte → erstelle_bericht → warte_auf_freigabe → versand`.
+`warte_auf_freigabe` wird nur eingehängt, wenn `--mail` übergeben wird.
+Ohne `--mail` endet der Graph nach `erstelle_bericht` ohne Interrupt.
+
+**E2 – Lauf-ID und Freigabe-Workflow**
+Jeder Lauf erhält eine eigene UUID als Lauf-ID (nicht hash des Ordners).
+`fibu freigeben` sucht den jüngsten offenen Lauf für den Periodenordner.
+Mehrere parallele Läufe auf demselben Ordner sind damit möglich.
+
+**E3 – Schlanker State, Serialisierung testen**
+Der Graph-State hält das vollständige `Context`-Objekt nur in Phase 2a.
+Ab 2b: State enthält nur IDs und primitive Werte; `Context` und `Auswertung`
+werden über `LaufStore` nachgeladen. Tests prüfen explizit `Decimal`- und
+`Path`-Serialisierung mit dem SQLite-Checkpointer.
+
+**E4 – Stabile Finding-ID**
+`Finding.id` = `sha256("{rule}:{fachlicher-schluessel}")[:16]`, wobei der
+fachliche Schlüssel aus dem Skill selbst kommt (z. B. Kontonummer, Belegpfad).
+Für Befunde ohne `refs` wird `rule` allein als Schlüssel verwendet.
+Testanforderung: Alle `id`-Werte in einem Lauf sind eindeutig.
+
+**E5 – SQLite-Pfad aus Konfiguration**
+`config/lokal.yaml` (außerhalb des Repos, in `.gitignore`) enthält den
+`store.sqlite_pfad`-Schlüssel. Fallback: `~/.fibu/laeufe.db`.
+`config/default.yaml` enthält nur den Platzhalter-Kommentar.
+
+## Schritt 2a – Minimaler Graph ✓
+
+`src/fibu/graph/` mit typisiertem `PruefState` (TypedDict), vier Knoten
+(`lade_kontext`, `fuehre_skills_aus`, `bewerte`, `erstelle_bericht`) und
+`run_pruefung()` als Einstiegspunkt. `python -m fibu pruefen` nutzt den Graph.
+16 neue Tests (unit/graph + integration/graph_pipeline). 187 Tests grün.
+
+---
+
 ## Schritt 2 – Contracts (`src/fibu/contracts/`)
 
 Pydantic-v2-Modelle mit `schema_version = "1"`:
