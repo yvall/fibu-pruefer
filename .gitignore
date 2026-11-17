@@ -13,3 +13,8 @@ data/
 echt/
 .DS_Store
 *.egg-info/
+
+# Eval-Vorlagen und -Ergebnisse (echte OCR-Texte und Belegnummern)
+eval/
+vorlage_*.json
+eval_vorlage.json

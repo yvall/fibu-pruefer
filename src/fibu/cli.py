@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+from decimal import Decimal
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fibu.config import LokaleConfig
+
+if TYPE_CHECKING:
+    from fibu.contracts import BelegRecord
 
 
 class FibuFehler(Exception):
@@ -209,12 +214,73 @@ def _cmd_llm_pruefen(_a: argparse.Namespace) -> int:
     return 0
 
 
+def _format_betrag_de(betrag: Decimal) -> str:
+    """Formatiert Decimal als deutschen Betrag: '1.234,56'."""
+    betrag = betrag.quantize(Decimal("0.01"))
+    s = str(betrag)
+    int_part, dec_part = s.split(".") if "." in s else (s, "00")
+    groups: list[str] = []
+    while len(int_part) > 3:
+        groups.insert(0, int_part[-3:])
+        int_part = int_part[:-3]
+    groups.insert(0, int_part)
+    return ".".join(groups) + "," + dec_part
+
+
+def _beleg_zu_vorlage_eintrag(
+    b: BelegRecord, mit_vorschlag: bool
+) -> dict[str, object]:
+    """Konvertiert BelegRecord in einen Vorlage-Eintrag.
+
+    mit_vorschlag=True: füllt 'vorschlag' mit deterministisch gefundenen Werten
+    vor (Betrag aus brutto, Datum aus daten, Nummer aus nummern).
+    Die Gold-Felder betrag/datum/nummer bleiben immer leer – der Benutzer bestätigt.
+    """
+    eintrag: dict[str, object] = {
+        "beleg": b.rel,
+        "text": b.text[:8000],
+        "text_snippet": b.text[:300],
+        "betrag": "",
+        "datum": "",
+        "nummer": "",
+    }
+    if mit_vorschlag:
+        vorschlag: dict[str, str] = {}
+        if b.brutto:
+            vorschlag["betrag"] = _format_betrag_de(max(b.brutto))
+        if b.daten:
+            vorschlag["datum"] = b.daten[0]
+        if b.nummern:
+            vorschlag["nummer"] = b.nummern[0]
+        if vorschlag:
+            eintrag["vorschlag"] = vorschlag
+    return eintrag
+
+
+def _eval_ausgabe_pfad(
+    period_name: str, eval_dir_env: str, cfg: LokaleConfig
+) -> Path:
+    """Bestimmt den Ausgabepfad für die Eval-Vorlage (ohne mkdir).
+
+    Priorität: EVAL_REAL_DIR > config.daten.wurzel/eval > ~/.fibu/eval.
+    Dateiname immer: vorlage_{period_name}.json (konsistent mit run_eval.py glob).
+    """
+    if eval_dir_env:
+        base = Path(eval_dir_env)
+    elif cfg.daten.wurzel:
+        base = cfg.daten.wurzel / "eval"
+    else:
+        base = Path.home() / ".fibu" / "eval"
+    return base / f"vorlage_{period_name}.json"
+
+
 def _cmd_eval_vorlage(a: argparse.Namespace) -> int:
     """Erzeugt eine Vorlagendatei für die manuelle LLM-Evaluation von beleg-extraktion.
 
-    Schreibt je unlesbarem Beleg einen Eintrag mit leerem betrag/datum/nummer
-    in eine JSON-Datei. Der Benutzer füllt die Felder manuell aus; der Eval-Lauf
-    (evals/run_eval.py) liest sie über EVAL_REAL_DIR.
+    Schreibt je Beleg einen Eintrag mit leerem betrag/datum/nummer.
+    Mit --alle werden alle Belege aufgenommen und deterministische Werte als
+    'vorschlag' eingetragen. Der Eval-Lauf (evals/run_eval.py) liest die Datei
+    über EVAL_REAL_DIR oder --eval-dir.
     """
     import json
     import os
@@ -225,34 +291,26 @@ def _cmd_eval_vorlage(a: argparse.Namespace) -> int:
     if not period_dir.is_dir():
         raise FibuFehler(f"Ordner nicht gefunden: {period_dir}")
 
+    cfg = LokaleConfig.laden()
     ctx = load_context(period_dir)
-    unlesbar = [b for b in ctx.belege if not b.alle and b.kind != "storno" and b.text.strip()]
 
-    vorlage = [
-        {
-            "beleg": b.rel,
-            "text": b.text[:8000],  # OCR-Volltext für den Eval-Lauf
-            "text_snippet": b.text[:300],  # Kurzvorschau zur manuellen Prüfung
-            "betrag": "",
-            "datum": "",
-            "nummer": "",
-        }
-        for b in unlesbar
-    ]
+    mit_vorschlag = bool(getattr(a, "alle", False))
+    if mit_vorschlag:
+        kandidaten = [b for b in ctx.belege if b.kind != "storno" and b.text.strip()]
+    else:
+        kandidaten = [
+            b for b in ctx.belege if not b.alle and b.kind != "storno" and b.text.strip()
+        ]
+
+    vorlage = [_beleg_zu_vorlage_eintrag(b, mit_vorschlag) for b in kandidaten]
 
     eval_dir_env = os.environ.get("EVAL_REAL_DIR", "")
-    if eval_dir_env:
-        ausgabe = Path(eval_dir_env) / f"vorlage_{period_dir.name}.json"
-        Path(eval_dir_env).mkdir(parents=True, exist_ok=True)
-    else:
-        ausgabe = period_dir / "eval_vorlage.json"
+    ausgabe = _eval_ausgabe_pfad(period_dir.name, eval_dir_env, cfg)
+    ausgabe.parent.mkdir(parents=True, exist_ok=True)
 
-    ausgabe.write_text(
-        json.dumps(vorlage, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    print(f"Vorlage mit {len(vorlage)} Beleg(en) geschrieben: {ausgabe}")
-    if not eval_dir_env:
-        print("Tipp: EVAL_REAL_DIR setzen, damit die Datei außerhalb des Repos liegt.")
+    ausgabe.write_text(json.dumps(vorlage, ensure_ascii=False, indent=2), encoding="utf-8")
+    modus = "alle Belege" if mit_vorschlag else "unlesbare Belege"
+    print(f"Vorlage ({modus}): {len(vorlage)} Einträge → {ausgabe}")
     print("Felder betrag/datum/nummer ausfüllen, dann: python evals/run_eval.py")
     return 0
 
@@ -302,6 +360,10 @@ def main() -> int:
     )
     p_eval_vl.add_argument("--ordner", metavar="PFAD", required=True,
                            help="Pfad zum Periodenordner")
+    p_eval_vl.add_argument(
+        "--alle", action="store_true",
+        help="Alle Belege aufnehmen (nicht nur unlesbare); deterministische Felder als 'vorschlag' eintragen",
+    )
 
     p_fg = sub.add_parser("freigeben", help="pausierten Prüflauf freigeben oder sperren")
     gruppe_fg = p_fg.add_mutually_exclusive_group(required=True)

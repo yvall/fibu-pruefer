@@ -19,6 +19,7 @@ import importlib.util
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 # Projekt-Root zum sys.path hinzufügen (Aufruf direkt aus Repo-Root)
@@ -92,49 +93,89 @@ def main() -> int:
     llm = OllamaClient.aus_config(cfg.llm)
 
     vorlage = _lade_vorlage(eval_dir, args.ordner)
-    print(f"Einträge: {len(vorlage)}")
+    n_gesamt = len(vorlage)
+
+    # Einträge ohne ausgefüllte Gold-Felder werden übersprungen
+    n_leer = sum(
+        1 for e in vorlage
+        if not any(e.get(f, "").strip() for f in ("betrag", "datum", "nummer"))
+    )
+    n_bewertet = n_gesamt - n_leer
+
+    print(f"Modell       : {llm.modell}")
+    print(
+        f"Einträge     : {n_gesamt} gesamt"
+        + (f", {n_leer} ohne Gold-Felder (übersprungen)" if n_leer else "")
+        + f", {n_bewertet} bewertet"
+    )
+    print()
 
     mod = _lade_skill()
-    extrahiere = mod._extrahiere
+    extrahiere = mod._extrahiere  # type: ignore[attr-defined]
 
     treffer: dict[str, int] = {"betrag": 0, "datum": 0, "nummer": 0}
     gesamt: dict[str, int] = {"betrag": 0, "datum": 0, "nummer": 0}
+    laufzeiten: list[float] = []
 
     for eintrag in vorlage:
         rel = eintrag.get("beleg", "?")
         text = eintrag.get("text", eintrag.get("text_snippet", ""))
+
+        # Überspringe ohne Text oder ohne Gold-Felder
         if not text.strip():
             continue
+        gold_felder = {f: eintrag.get(f, "") for f in ("betrag", "datum", "nummer")}
+        if not any(v.strip() for v in gold_felder.values()):
+            continue
 
+        t0 = time.perf_counter()
         findings = extrahiere(rel, text, llm)
+        laufzeit = time.perf_counter() - t0
+        laufzeiten.append(laufzeit)
+
         extrahiert = _detail_zu_feldern(
             next((f.detail for f in findings if f.severity == "info"), "")
         )
 
         for feld in ("betrag", "datum", "nummer"):
-            gold = eintrag.get(feld, "")
-            if gold.strip():
-                gesamt[feld] += 1
-                if _vergleiche(gold, extrahiert.get(feld, "")):
-                    treffer[feld] += 1
-                    print(f"  ✓ {rel}: {feld}={gold!r}")
-                else:
-                    got = extrahiert.get(feld, "(leer)")
-                    print(f"  ✗ {rel}: {feld} erwartet={gold!r}, erhalten={got!r}")
+            gold = gold_felder[feld]
+            if not gold.strip():
+                continue
+            gesamt[feld] += 1
+            ok = _vergleiche(gold, extrahiert.get(feld, ""))
+            if ok:
+                treffer[feld] += 1
+                print(f"  ✓ {rel}: {feld}={gold!r}")
+            else:
+                got = extrahiert.get(feld, "(leer)")
+                print(f"  ✗ {rel}: {feld}  erwartet={gold!r}  erhalten={got!r}")
 
-    print("\nTrefferquote je Feld:")
-    print(f"{'Feld':<12} {'Treffer':>8} {'Gesamt':>8} {'Quote':>8}")
-    print("-" * 42)
-    gesamt_treffer = sum(treffer.values())
-    gesamt_gesamt = sum(gesamt.values())
+    # Zusammenfassung
+    print()
+    print(f"Modell       : {llm.modell}")
+    if laufzeiten:
+        avg = sum(laufzeiten) / len(laufzeiten)
+        total = sum(laufzeiten)
+        print(f"Laufzeit     : {len(laufzeiten)} Belege, ∅ {avg:.1f} s/Beleg, gesamt {total:.1f} s")
+    if n_leer:
+        print(f"Übersprungen : {n_leer} Einträge (keine Gold-Felder ausgefüllt)")
+
+    gesamt_t = sum(treffer.values())
+    gesamt_g = sum(gesamt.values())
+
+    print()
+    print("Trefferquote je Feld:")
+    print(f"{'Feld':<12} {'Treffer':>8} {'Gesamt':>8} {'Quote':>9}")
+    print("-" * 44)
     for feld in ("betrag", "datum", "nummer"):
         g = gesamt[feld]
         t = treffer[feld]
         q = f"{t / g * 100:.1f} %" if g else "–"
-        print(f"{feld:<12} {t:>8} {g:>8} {q:>8}")
-    print("-" * 42)
-    q_ges = f"{gesamt_treffer / gesamt_gesamt * 100:.1f} %" if gesamt_gesamt else "–"
-    print(f"{'gesamt':<12} {gesamt_treffer:>8} {gesamt_gesamt:>8} {q_ges:>8}")
+        print(f"{feld:<12} {t:>8} {g:>8} {q:>9}")
+    print("-" * 44)
+    q_ges = f"{gesamt_t / gesamt_g * 100:.1f} %" if gesamt_g else "–"
+    print(f"{'gesamt':<12} {gesamt_t:>8} {gesamt_g:>8} {q_ges:>9}")
+
     return 0
 
 
