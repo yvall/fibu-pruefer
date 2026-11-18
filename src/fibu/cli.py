@@ -232,29 +232,30 @@ def _beleg_zu_vorlage_eintrag(
 ) -> dict[str, object]:
     """Konvertiert BelegRecord in einen Vorlage-Eintrag.
 
-    mit_vorschlag=True: füllt 'vorschlag' mit deterministisch gefundenen Werten
-    vor (Betrag aus brutto, Datum aus daten, Nummer aus nummern).
-    Die Gold-Felder betrag/datum/nummer bleiben immer leer – der Benutzer bestätigt.
+    mit_vorschlag=True (--alle): befüllt betrag/datum/nummer direkt aus dem
+    deterministischen Abgleich als Startwert. Der Benutzer korrigiert diese
+    Werte bei Bedarf und setzt geprueft auf true. run_eval.py wertet nur
+    Einträge mit geprueft=true aus.
     """
-    eintrag: dict[str, object] = {
+    betrag_wert = ""
+    datum_wert = ""
+    nummer_wert = ""
+    if mit_vorschlag:
+        if b.brutto:
+            betrag_wert = _format_betrag_de(max(b.brutto))
+        if b.daten:
+            datum_wert = b.daten[0]
+        if b.nummern:
+            nummer_wert = b.nummern[0]
+    return {
         "beleg": b.rel,
         "text": b.text[:8000],
         "text_snippet": b.text[:300],
-        "betrag": "",
-        "datum": "",
-        "nummer": "",
+        "betrag": betrag_wert,
+        "datum": datum_wert,
+        "nummer": nummer_wert,
+        "geprueft": False,
     }
-    if mit_vorschlag:
-        vorschlag: dict[str, str] = {}
-        if b.brutto:
-            vorschlag["betrag"] = _format_betrag_de(max(b.brutto))
-        if b.daten:
-            vorschlag["datum"] = b.daten[0]
-        if b.nummern:
-            vorschlag["nummer"] = b.nummern[0]
-        if vorschlag:
-            eintrag["vorschlag"] = vorschlag
-    return eintrag
 
 
 def _eval_ausgabe_pfad(

@@ -57,16 +57,18 @@ def test_format_quantize_auf_2_stellen() -> None:
 # _beleg_zu_vorlage_eintrag
 # ---------------------------------------------------------------------------
 
-def test_eintrag_ohne_vorschlag_gold_leer() -> None:
+def test_eintrag_ohne_vorschlag_felder_leer_geprueft_false() -> None:
     b = _beleg(alle=[], brutto=[], daten=[], nummern=[])
     e = _beleg_zu_vorlage_eintrag(b, mit_vorschlag=False)
     assert e["betrag"] == ""
     assert e["datum"] == ""
     assert e["nummer"] == ""
+    assert e["geprueft"] is False
     assert "vorschlag" not in e
 
 
-def test_eintrag_mit_vorschlag_vollstaendig() -> None:
+def test_eintrag_mit_vorschlag_felder_direkt_befuellt() -> None:
+    """--alle: Gold-Felder werden direkt aus deterministischem Abgleich befüllt."""
     b = _beleg(
         text="Rechnung\n1234,56",
         alle=[Decimal("1234.56")],
@@ -75,27 +77,30 @@ def test_eintrag_mit_vorschlag_vollstaendig() -> None:
         nummern=["2024-001"],
     )
     e = _beleg_zu_vorlage_eintrag(b, mit_vorschlag=True)
-    # Gold-Felder bleiben leer
-    assert e["betrag"] == ""
-    assert e["datum"] == ""
-    assert e["nummer"] == ""
-    # Vorschlag gefüllt
-    assert e["vorschlag"]["betrag"] == "1.234,56"  # type: ignore[index]
-    assert e["vorschlag"]["datum"] == "15.03.2024"  # type: ignore[index]
-    assert e["vorschlag"]["nummer"] == "2024-001"  # type: ignore[index]
+    # Gold-Felder direkt gesetzt (nicht leer)
+    assert e["betrag"] == "1.234,56"
+    assert e["datum"] == "15.03.2024"
+    assert e["nummer"] == "2024-001"
+    assert e["geprueft"] is False
+    assert "vorschlag" not in e
 
 
 def test_eintrag_mit_vorschlag_nur_nummer() -> None:
     b = _beleg(alle=[], brutto=[], daten=[], nummern=["RG-42"])
     e = _beleg_zu_vorlage_eintrag(b, mit_vorschlag=True)
-    assert "datum" not in e.get("vorschlag", {})
-    assert e["vorschlag"]["nummer"] == "RG-42"  # type: ignore[index]
+    assert e["nummer"] == "RG-42"
+    assert e["datum"] == ""
+    assert e["betrag"] == ""
+    assert e["geprueft"] is False
+    assert "vorschlag" not in e
 
 
-def test_eintrag_mit_vorschlag_keine_daten_kein_vorschlag_key() -> None:
-    """Kein vorschlag-Schlüssel wenn der Parser nichts gefunden hat."""
+def test_eintrag_mit_vorschlag_keine_det_daten_felder_leer() -> None:
+    """Kein deterministischer Treffer → Felder leer, kein vorschlag-Key."""
     b = _beleg(alle=[], brutto=[], daten=[], nummern=[])
     e = _beleg_zu_vorlage_eintrag(b, mit_vorschlag=True)
+    assert e["betrag"] == ""
+    assert e["geprueft"] is False
     assert "vorschlag" not in e
 
 
@@ -106,10 +111,11 @@ def test_eintrag_text_gekuerzt() -> None:
     assert len(e["text_snippet"]) == 300  # type: ignore[arg-type]
 
 
-def test_eintrag_ohne_vorschlag_flag_ignoriert_daten() -> None:
-    """Mit mit_vorschlag=False wird vorschlag nie erzeugt."""
+def test_eintrag_ohne_vorschlag_flag_felder_leer() -> None:
+    """Mit mit_vorschlag=False bleiben Felder leer auch wenn Parser Daten fand."""
     b = _beleg(brutto=[Decimal("500.00")], daten=["01.01.2024"], nummern=["X-1"])
     e = _beleg_zu_vorlage_eintrag(b, mit_vorschlag=False)
+    assert e["betrag"] == ""
     assert "vorschlag" not in e
 
 
@@ -183,10 +189,12 @@ def test_vorlage_roundtrip(tmp_path: Path) -> None:
     assert len(geladen) == 1
     e = geladen[0]
     assert e["beleg"] == "ordner/rechnung.pdf"
-    assert e["betrag"] == ""          # Gold-Feld leer
-    assert e["vorschlag"]["betrag"] == "100,00"
-    assert e["vorschlag"]["datum"] == "01.03.2024"
-    assert e["vorschlag"]["nummer"] == "2024-001"
+    # Gold-Felder direkt befüllt (--alle)
+    assert e["betrag"] == "100,00"
+    assert e["datum"] == "01.03.2024"
+    assert e["nummer"] == "2024-001"
+    assert e["geprueft"] is False
+    assert "vorschlag" not in e
 
 
 def test_mehrere_vorlagen_glob_findet_letzte(tmp_path: Path) -> None:

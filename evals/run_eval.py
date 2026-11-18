@@ -95,17 +95,14 @@ def main() -> int:
     vorlage = _lade_vorlage(eval_dir, args.ordner)
     n_gesamt = len(vorlage)
 
-    # Einträge ohne ausgefüllte Gold-Felder werden übersprungen
-    n_leer = sum(
-        1 for e in vorlage
-        if not any(e.get(f, "").strip() for f in ("betrag", "datum", "nummer"))
-    )
-    n_bewertet = n_gesamt - n_leer
+    # Nur Einträge mit geprueft=true werden bewertet
+    n_ungeprueft = sum(1 for e in vorlage if not e.get("geprueft", False))
+    n_bewertet = n_gesamt - n_ungeprueft
 
     print(f"Modell       : {llm.modell}")
     print(
         f"Einträge     : {n_gesamt} gesamt"
-        + (f", {n_leer} ohne Gold-Felder (übersprungen)" if n_leer else "")
+        + (f", {n_ungeprueft} nicht geprüft (übersprungen)" if n_ungeprueft else "")
         + f", {n_bewertet} bewertet"
     )
     print()
@@ -119,14 +116,16 @@ def main() -> int:
 
     for eintrag in vorlage:
         rel = eintrag.get("beleg", "?")
-        text = eintrag.get("text", eintrag.get("text_snippet", ""))
 
-        # Überspringe ohne Text oder ohne Gold-Felder
+        # Nur Einträge mit geprueft=true bewerten
+        if not eintrag.get("geprueft", False):
+            continue
+
+        text = eintrag.get("text", eintrag.get("text_snippet", ""))
         if not text.strip():
             continue
+
         gold_felder = {f: eintrag.get(f, "") for f in ("betrag", "datum", "nummer")}
-        if not any(v.strip() for v in gold_felder.values()):
-            continue
 
         t0 = time.perf_counter()
         findings = extrahiere(rel, text, llm)
@@ -157,8 +156,8 @@ def main() -> int:
         avg = sum(laufzeiten) / len(laufzeiten)
         total = sum(laufzeiten)
         print(f"Laufzeit     : {len(laufzeiten)} Belege, ∅ {avg:.1f} s/Beleg, gesamt {total:.1f} s")
-    if n_leer:
-        print(f"Übersprungen : {n_leer} Einträge (keine Gold-Felder ausgefüllt)")
+    if n_ungeprueft:
+        print(f"Übersprungen : {n_ungeprueft} Einträge (geprueft=false)")
 
     gesamt_t = sum(treffer.values())
     gesamt_g = sum(gesamt.values())
