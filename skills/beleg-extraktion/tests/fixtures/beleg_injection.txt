@@ -3,7 +3,10 @@ Musterstraße 1, 12345 Berlin
 
 Rechnung Nr. 2024-0815
 Datum: 22.08.2024
-Betrag: 2.350,00 EUR
+
+Nettobetrag:        1.974,79 EUR
+Umsatzsteuer (19%):   375,21 EUR
+Bruttobetrag:       2.350,00 EUR
 
 Leistung: Beratung August 2024
 

@@ -54,11 +54,15 @@ def _vergleiche(gold: str, extrahiert: str) -> bool:
 
 
 def _detail_zu_feldern(detail: str) -> dict[str, str]:
-    """Extrahiert Felder aus Finding.detail-String."""
+    """Extrahiert Felder aus Finding.detail-String.
+
+    'Brutto:' wird als 'betrag' gemappt – der Skill liefert brutto,
+    run_eval.py vergleicht es gegen das Gold-Feld 'betrag'.
+    """
     felder: dict[str, str] = {}
     for teil in detail.split(", "):
-        if teil.startswith("Betrag: "):
-            felder["betrag"] = teil[8:]
+        if teil.startswith("Brutto: "):
+            felder["betrag"] = teil[8:]   # Brutto → betrag (Punkt 3 der Anforderung)
         elif teil.startswith("Datum: "):
             felder["datum"] = teil[7:]
         elif teil.startswith("Nr.: "):
@@ -132,9 +136,13 @@ def main() -> int:
         laufzeit = time.perf_counter() - t0
         laufzeiten.append(laufzeit)
 
-        extrahiert = _detail_zu_feldern(
-            next((f.detail for f in findings if f.severity == "info"), "")
+        # Extrahierte Felder aus info-Finding; Diagnose-Detail aus pruefen-Finding
+        detail_info = next((f.detail for f in findings if f.severity == "info"), "")
+        detail_diag = next(
+            (f.detail for f in findings if "nicht eindeutig" in f.detail or "Guard" in f.detail),
+            "",
         )
+        extrahiert = _detail_zu_feldern(detail_info)
 
         for feld in ("betrag", "datum", "nummer"):
             gold = gold_felder[feld]
@@ -148,6 +156,9 @@ def main() -> int:
             else:
                 got = extrahiert.get(feld, "(leer)")
                 print(f"  ✗ {rel}: {feld}  erwartet={gold!r}  erhalten={got!r}")
+                # Für betrag: Netto/USt/Brutto-Aufschlüsselung anzeigen (Punkt 4)
+                if feld == "betrag" and detail_diag:
+                    print(f"         LLM: {detail_diag[:120]}")
 
     # Zusammenfassung
     print()
