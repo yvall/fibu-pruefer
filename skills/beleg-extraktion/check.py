@@ -1,22 +1,24 @@
-"""Skill beleg-extraktion: LLM-gestützte Extraktion von Betrag/Datum/Nummer
+"""Skill beleg-extraktion: LLM-gestützte Extraktion von Datum/Nummer
 aus Belegen, die der deterministische Parser nicht lesen konnte.
 
-Design (überarbeitete Fassung):
-- Python extrahiert alle Kandidaten (Beträge, Daten, Nummern) aus dem Text.
-  Das LLM wählt nur den Index des passenden Kandidaten, keinen Freitext.
-  Damit ist jeder extrahierte Wert per Konstruktion im Belegtext vorhanden.
+Design (v2 – deterministischer Betrag):
+- Python wählt den Gesamtbetrag deterministisch aus den Betragskandidaten:
+    A) Kandidat = Summe zweier anderer (Netto + USt mit Satz aus config)
+    B) Kandidat nächst einem Summen-Stichwort (Gesamt, Total, …)
+    C) Größter Kandidat
+  Die angewendete Regel steht im Finding-Detail.
+  Bei Gleichstand innerhalb einer Regel: "Betrag nicht eindeutig", kein Wert.
+- Das LLM liefert nur noch Datum und Nummer (Index-basiert wie bisher).
 - Guard entfällt auf Feldebene: ein ungültiger Index wird verworfen,
   die anderen Felder bleiben erhalten.
-- USt optional: Weist der Beleg keine USt aus, wird Brutto direkt akzeptiert;
-  "keine Umsatzsteuer" ist kein Fehler (Auslandsbeleg, Reverse Charge, §4 UStG).
-- Arithmetik-Prüfung nur wenn Netto + USt + Brutto alle ausgewählt sind.
+- USt optional: Weist der Beleg keine USt aus, greift Regel B oder C.
 """
 from __future__ import annotations
 
 import json
 import logging
 import re
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
@@ -32,32 +34,29 @@ _DEFAULT_TOLERANZ = Decimal("0.02")
 _DEFAULT_KOPF_LAENGE = 600
 _DEFAULT_SUMMEN_LAENGE = 400
 
+# USt-Sätze für Regel A (0 wird für die Arithmetik übersprungen)
+_UST_SAETZE_DEFAULT = [Decimal("0.19"), Decimal("0.07"), Decimal("0.00")]
+
 _PROMPT_TEMPLATE = (Path(__file__).parent / "prompts" / "extraktion.md").read_text(
     encoding="utf-8"
 )
 
 # ---------------------------------------------------------------------------
-# JSON-Schema für LLM-Antwort (Index-basiert)
+# JSON-Schema für LLM-Antwort (nur noch Datum + Nummer)
 # ---------------------------------------------------------------------------
 
 _JSON_SCHEMA: dict = {
     "type": "object",
     "properties": {
-        "brutto_idx": {"type": ["integer", "null"]},
-        "netto_idx":  {"type": ["integer", "null"]},
-        "ust_idx":    {"type": ["integer", "null"]},
         "datum_idx":  {"type": ["integer", "null"]},
         "nummer_idx": {"type": ["integer", "null"]},
     },
-    "required": ["brutto_idx", "netto_idx", "ust_idx", "datum_idx", "nummer_idx"],
+    "required": ["datum_idx", "nummer_idx"],
     "additionalProperties": False,
 }
 
 
 class _LlmAntwort(BaseModel):
-    brutto_idx: int | None = None
-    netto_idx:  int | None = None
-    ust_idx:    int | None = None
     datum_idx:  int | None = None
     nummer_idx: int | None = None
 
@@ -94,20 +93,25 @@ _SUMMEN_KW_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Stichwörter für deterministischen Betrag-Abgleich (Regel B)
+_BRUTTO_KW_RE = re.compile(
+    r"\b(?:gesamtbetrag|gesamt|total|zahlbetrag|rechnungsbetrag|"
+    r"amount\s+due|summe|endbetrag)\b",
+    re.IGNORECASE,
+)
+
 # Nummern nach Schlüsselwörtern
-# Suffixe sind bewusst NICHT optional: "Rechnungsdatum" darf nicht matchen.
-# Kein Leerzeichen im Capture-Ausdruck: verhindert Multi-Wort-Captures.
 _NR_KW_RE = re.compile(
     r"(?:"
-    r"Rechnungs(?:nummer|nr\.?)"                      # Rechnungsnummer, Rechnungsnr.
-    r"|Invoice\s*(?:number|no\.?|nr\.?|#)"            # Invoice number / no. / nr. / #
-    r"|Receipt\s*(?:no\.?|nr\.?|#)"                   # Receipt no. / nr. / #
-    r"|Beleg(?:nummer|-?Nr\.?)"                        # Belegnummer, Beleg-Nr.
-    r"|Gutschrift(?:-Nr\.?|s(?:-?Nr\.?|nummer))"       # Gutschrift-Nr., Gutschriftsnummer
+    r"Rechnungs(?:nummer|nr\.?)"
+    r"|Invoice\s*(?:number|no\.?|nr\.?|#)"
+    r"|Receipt\s*(?:no\.?|nr\.?|#)"
+    r"|Beleg(?:nummer|-?Nr\.?)"
+    r"|Gutschrift(?:-Nr\.?|s(?:-?Nr\.?|nummer))"
     r"|Buchungsnummer"
     r"|Facture"
-    r"|Nr\."                                            # Nr. (Punkt obligatorisch)
-    r"|No\."                                            # No. (Punkt obligatorisch)
+    r"|Nr\."
+    r"|No\."
     r")\s*[:.\s#]*"
     r"([A-Z0-9][-A-Z0-9/_.]{2,29})",
     re.IGNORECASE,
@@ -123,17 +127,14 @@ def _extrahiere_betraege(text: str) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
 
-    # DE: "1.234,56" oder "24,00"
     for m in _AMT_DE_RE.finditer(text):
         val = m.group(1)
         if val not in seen:
             seen.add(val)
             result.append(val)
 
-    # EN: "90.13" oder "1,234.56" → konvertieren zu "90,13" / "1234,56"
     for m in _AMT_EN_RE.finditer(text):
         en = m.group(1)
-        # Tausender-Komma entfernen, Dezimal-Punkt → Komma
         de = en.replace(",", "").replace(".", ",")
         if de not in seen:
             seen.add(de)
@@ -145,7 +146,7 @@ def _extrahiere_betraege(text: str) -> list[str]:
 def _extrahiere_datumsangaben(text: str) -> list[str]:
     """Extrahiert Datumsangaben und normalisiert sie zu DD.MM.YYYY."""
     seen: set[str] = set()
-    found: list[tuple[int, str]] = []  # (pos, normalized)
+    found: list[tuple[int, str]] = []
 
     def _add(pos: int, d: int, mo: int, y: str) -> None:
         if 1 <= mo <= 12 and 1 <= d <= 31:
@@ -154,19 +155,15 @@ def _extrahiere_datumsangaben(text: str) -> list[str]:
                 seen.add(norm)
                 found.append((pos, norm))
 
-    # DD.MM.YYYY
     for m in re.finditer(r"\b(\d{2})\.(\d{2})\.(\d{4})\b", text):
         _add(m.start(), int(m.group(1)), int(m.group(2)), m.group(3))
 
-    # MM/DD/YYYY (US)
     for m in re.finditer(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b", text):
         _add(m.start(), int(m.group(2)), int(m.group(1)), m.group(3))
 
-    # YYYY-MM-DD (ISO)
     for m in re.finditer(r"\b(\d{4})-(\d{2})-(\d{2})\b", text):
         _add(m.start(), int(m.group(3)), int(m.group(2)), m.group(1))
 
-    # Month DD, YYYY (englisch): "August 22, 2026"
     pat_en = re.compile(
         r"\b(January|February|March|April|May|June|July|August|September|"
         r"October|November|December)\s+(\d{1,2}),?\s+(\d{4})\b",
@@ -176,7 +173,6 @@ def _extrahiere_datumsangaben(text: str) -> list[str]:
         mo = _MONATE_EN.get(m.group(1).lower(), 0)
         _add(m.start(), int(m.group(2)), mo, m.group(3))
 
-    # DD. Monatsname YYYY (deutsch): "22. August 2026"
     pat_de = re.compile(
         r"\b(\d{1,2})\.\s*(Januar|Februar|März|April|Mai|Juni|Juli|August|"
         r"September|Oktober|November|Dezember)\s+(\d{4})\b",
@@ -221,7 +217,6 @@ def _relevanter_text(
 def _baue_prompt(
     kopf: str,
     summenblock: str,
-    betraege: list[str],
     datumsangaben: list[str],
     nummern: list[str],
 ) -> str:
@@ -234,14 +229,143 @@ def _baue_prompt(
         _PROMPT_TEMPLATE
         .replace("{{ kopf }}", kopf.strip())
         .replace("{{ summenblock }}", summenblock.strip() or "(keine Summenzeilen erkannt)")
-        .replace("{{ betraege }}", _fmt(betraege))
         .replace("{{ datumsangaben }}", _fmt(datumsangaben))
         .replace("{{ nummern }}", _fmt(nummern))
     )
 
 
 # ---------------------------------------------------------------------------
-# Arithmetik-Hilfsfunktionen (unveränd.)
+# Deterministischer Betrag (Regeln A → B → C)
+# ---------------------------------------------------------------------------
+
+def _waehle_brutto(
+    betraege: list[str],
+    text: str,
+    ust_saetze: list[Decimal] | None = None,
+    toleranz: Decimal = _DEFAULT_TOLERANZ,
+) -> tuple[str | None, str]:
+    """Wählt den Gesamtbetrag deterministisch aus den Kandidaten.
+
+    Returns (brutto_string_in_de_format | None, regel_beschreibung).
+    Bei Gleichstand innerhalb einer Regel: (None, "Betrag nicht eindeutig …").
+    """
+    if not betraege:
+        return None, "keine Beträge"
+
+    if ust_saetze is None:
+        ust_saetze = _UST_SAETZE_DEFAULT
+
+    werte: list[Decimal | None] = [_parse_betrag_de(b) for b in betraege]
+
+    # Regel A: B = N + U, U/N ≈ Steuersatz
+    sieger_a: list[tuple[int, str]] = []  # (brutto_idx, detail)
+
+    for bi, B in enumerate(werte):
+        if B is None or B <= 0:
+            continue
+        matched = False
+        for ni, N in enumerate(werte):
+            if matched:
+                break
+            if ni == bi or N is None or N <= 0:
+                continue
+            U = B - N
+            if U < 0:
+                continue
+            for rate in ust_saetze:
+                if rate == 0:
+                    continue
+                expected_U = (N * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                if abs(U - expected_U) > toleranz:
+                    continue
+                # USt-Kandidat muss auch in der Liste stehen
+                for ui, wu in enumerate(werte):
+                    if ui == bi or ui == ni or wu is None:
+                        continue
+                    if abs(wu - U) <= toleranz:
+                        rate_pct = int(rate * 100)
+                        detail = (
+                            f"A: Arithmetik ({betraege[ni]}+{betraege[ui]}"
+                            f"={betraege[bi]} USt {rate_pct}%)"
+                        )
+                        sieger_a.append((bi, detail))
+                        matched = True
+                        break
+                if matched:
+                    break
+
+    # Duplikate nach Index entfernen
+    seen_idx: set[int] = set()
+    unique_a: list[tuple[int, str]] = []
+    for idx, detail in sieger_a:
+        if idx not in seen_idx:
+            seen_idx.add(idx)
+            unique_a.append((idx, detail))
+
+    if len(unique_a) == 1:
+        idx, detail = unique_a[0]
+        return betraege[idx], detail
+    if len(unique_a) > 1:
+        return None, "Betrag nicht eindeutig (mehrere Arithmetik-Treffer)"
+
+    # Regel B: Nähe zu Stichwörtern (zeilenbasiert)
+    lines = text.splitlines()
+    kw_zeilen: set[int] = set()
+    for li, line in enumerate(lines):
+        if _BRUTTO_KW_RE.search(line):
+            kw_zeilen.add(li)
+
+    if kw_zeilen:
+        # Zeilen je Kandidat bestimmen (DE-Format und ohne Tausender-Trenner)
+        # Negative lookbehind/lookahead damit "50,00" nicht in "250,00" matcht.
+        cand_zeilen: list[set[int]] = []
+        for b_str in betraege:
+            b_no_sep = b_str.replace(".", "")
+            pat = re.compile(r"(?<!\d)" + re.escape(b_str) + r"(?!\d)")
+            pat_ns = re.compile(r"(?<!\d)" + re.escape(b_no_sep) + r"(?!\d)")
+            cz: set[int] = set()
+            for li, line in enumerate(lines):
+                if pat.search(line) or (b_no_sep != b_str and pat_ns.search(line)):
+                    cz.add(li)
+            cand_zeilen.append(cz)
+
+        # Scoring: gleiche Zeile=0, Folgezeile=1, Vorgängerzeile=2, sonst inf
+        scores: list[float] = []
+        for cz in cand_zeilen:
+            best = float("inf")
+            for kl in kw_zeilen:
+                for al in cz:
+                    if al == kl:
+                        best = min(best, 0.0)
+                    elif al == kl + 1:
+                        best = min(best, 1.0)
+                    elif al == kl - 1:
+                        best = min(best, 2.0)
+            scores.append(best)
+
+        min_score = min(scores)
+        if min_score < float("inf"):
+            winners_b = [i for i, s in enumerate(scores) if s == min_score]
+            if len(winners_b) == 1:
+                return betraege[winners_b[0]], "B: Stichwort-Nähe"
+            return None, "Betrag nicht eindeutig (Stichwort-Nähe, Gleichstand)"
+
+    # Regel C: größter Betrag
+    valid: list[tuple[int, Decimal]] = [
+        (i, w) for i, w in enumerate(werte) if w is not None
+    ]
+    if not valid:
+        return None, "keine gültigen Beträge"
+
+    max_val = max(w for _, w in valid)
+    winners_c = [i for i, w in valid if w == max_val]
+    if len(winners_c) == 1:
+        return betraege[winners_c[0]], "C: größter Betrag"
+    return None, "Betrag nicht eindeutig (Gleichstand größter Betrag)"
+
+
+# ---------------------------------------------------------------------------
+# Arithmetik-Hilfsfunktionen
 # ---------------------------------------------------------------------------
 
 def _parse_betrag_de(s: str) -> Decimal | None:
@@ -270,7 +394,7 @@ def _pruefe_brutto(
 
 
 # ---------------------------------------------------------------------------
-# LLM-Antwort-Parsing (unveränd. Fallback-Kette)
+# LLM-Antwort-Parsing
 # ---------------------------------------------------------------------------
 
 def _parse_llm_antwort(roh: str) -> _LlmAntwort | None:
@@ -330,22 +454,34 @@ def _extrahiere(
     toleranz: Decimal = _DEFAULT_TOLERANZ,
     kopf_laenge: int = _DEFAULT_KOPF_LAENGE,
     summen_laenge: int = _DEFAULT_SUMMEN_LAENGE,
+    ust_saetze: list[Decimal] | None = None,
 ) -> list[Finding]:
-    """Ruft LLM mit Kandidatenliste auf; LLM gibt nur Indizes zurück."""
-    # 1. Kandidaten aus Text
+    """Betrag deterministisch; LLM liefert nur Datum und Nummer (Index-basiert)."""
     betraege = _extrahiere_betraege(text)
     datumsangaben = _extrahiere_datumsangaben(text)
     nummern = _extrahiere_nummern(text)
 
-    kopf, summenblock = _relevanter_text(text, kopf_laenge, summen_laenge)
-    prompt = _baue_prompt(kopf, summenblock, betraege, datumsangaben, nummern)
+    # 1. Betrag deterministisch wählen
+    brutto_str, betrag_regel = _waehle_brutto(betraege, text, ust_saetze, toleranz)
 
-    # 2. LLM-Aufruf
+    # 2. LLM nur für Datum + Nummer
+    kopf, summenblock = _relevanter_text(text, kopf_laenge, summen_laenge)
+    prompt = _baue_prompt(kopf, summenblock, datumsangaben, nummern)
     modell = llm.modell_fuer(SKILL_ID)
     roh = llm.generiere(prompt, json_schema=_JSON_SCHEMA, modell=modell)
 
     if roh is None:
         log.debug("Kein LLM-Response für %s", beleg_rel)
+        if brutto_str is not None:
+            return [Finding(
+                rule=SKILL_ID, severity="pruefen",
+                title=f"LLM-Extraktion teilweise: {beleg_rel}",
+                detail=(
+                    f"Brutto: {brutto_str}, Betrag-Regel: {betrag_regel}; "
+                    "kein LLM-Response für Datum/Nr."
+                ),
+                refs=[Ref(art="beleg", id=beleg_rel)],
+            )]
         return [Finding(
             rule=SKILL_ID, severity="pruefen",
             title=f"LLM-Extraktion fehlgeschlagen: {beleg_rel}",
@@ -356,6 +492,16 @@ def _extrahiere(
     antwort = _parse_llm_antwort(roh)
     if antwort is None:
         log.debug("Parse-Fehler für %s | Roh: %r", beleg_rel, roh[:200])
+        if brutto_str is not None:
+            return [Finding(
+                rule=SKILL_ID, severity="pruefen",
+                title=f"LLM-Extraktion teilweise: {beleg_rel}",
+                detail=(
+                    f"Brutto: {brutto_str}, Betrag-Regel: {betrag_regel}; "
+                    f"Antwort nicht auswertbar: {roh[:80]!r}"
+                ),
+                refs=[Ref(art="beleg", id=beleg_rel)],
+            )]
         return [Finding(
             rule=SKILL_ID, severity="pruefen",
             title=f"LLM-Extraktion fehlgeschlagen: {beleg_rel}",
@@ -363,49 +509,31 @@ def _extrahiere(
             refs=[Ref(art="beleg", id=beleg_rel)],
         )]
 
-    # 3. Indizes → Werte (ungültiger Index → None → Feld verworfen)
+    # 3. LLM-Indizes → Werte
     def _lookup(idx: int | None, lst: list[str]) -> str | None:
         if idx is None or not (0 <= idx < len(lst)):
             return None
         return lst[idx]
 
-    brutto_str = _lookup(antwort.brutto_idx, betraege)
-    netto_str  = _lookup(antwort.netto_idx,  betraege)
-    ust_str    = _lookup(antwort.ust_idx,    betraege)
-    datum_str  = _lookup(antwort.datum_idx,  datumsangaben)
+    datum_str = _lookup(antwort.datum_idx, datumsangaben)
     nummer_str = _lookup(antwort.nummer_idx, nummern)
 
-    # 4. Betrag bestätigen – USt optional
-    brutto_bestaetigt: Decimal | None = None
-    betrag_pruefen_detail = ""
+    # 4. Finding zusammensetzen
+    info_teile: list[str] = []
+    betrag_detail = ""
 
     if brutto_str is not None:
-        if netto_str is not None and ust_str is not None:
-            # Arithmetik-Prüfung wenn alle drei vorhanden
-            brutto_bestaetigt = _pruefe_brutto(netto_str, ust_str, brutto_str, toleranz)
-            if brutto_bestaetigt is None:
-                n = _parse_betrag_de(netto_str)
-                u = _parse_betrag_de(ust_str)
-                b = _parse_betrag_de(brutto_str)
-                diff = abs(n + u - b) if (n and u and b) else Decimal(0)  # type: ignore[operator]
-                betrag_pruefen_detail = (
-                    f"Betrag nicht eindeutig (Arithmetik: "
-                    f"{netto_str} + {ust_str} ≠ {brutto_str}, Diff. {diff})"
-                )
-        else:
-            # Keine USt → Brutto direkt akzeptiert (Auslandsbeleg, §4 UStG, etc.)
-            brutto_bestaetigt = _parse_betrag_de(brutto_str)
-
-    # 5. Finding zusammensetzen – je Feld unabhängig
-    info_teile: list[str] = []
-    if brutto_bestaetigt is not None:
         info_teile.append(f"Brutto: {brutto_str}")
+        info_teile.append(f"Betrag-Regel: {betrag_regel}")
+    elif "nicht eindeutig" in betrag_regel:
+        betrag_detail = betrag_regel
+
     if datum_str:
         info_teile.append(f"Datum: {datum_str}")
     if nummer_str:
         info_teile.append(f"Nr.: {nummer_str}")
 
-    if not info_teile and not betrag_pruefen_detail:
+    if not info_teile and not betrag_detail:
         return [Finding(
             rule=SKILL_ID, severity="pruefen",
             title=f"Keine Felder extrahiert: {beleg_rel}",
@@ -414,8 +542,8 @@ def _extrahiere(
         )]
 
     detail = ", ".join(info_teile)
-    if betrag_pruefen_detail:
-        detail = (detail + "; " if detail else "") + betrag_pruefen_detail
+    if betrag_detail:
+        detail = (detail + "; " if detail else "") + betrag_detail
 
     severity = "info" if info_teile else "pruefen"
     title = (
@@ -441,12 +569,21 @@ def run(ctx: Context, llm: LlmClient) -> list[Finding]:
     kopf_laenge = int(ctx.config.get("beleg_kopf_laenge", _DEFAULT_KOPF_LAENGE))
     summen_laenge = int(ctx.config.get("beleg_summen_laenge", _DEFAULT_SUMMEN_LAENGE))
 
+    ust_saetze_pct = ctx.config.get("ust_saetze_prozent", [19, 7, 0])
+    try:
+        ust_saetze = [Decimal(str(s)) / 100 for s in ust_saetze_pct]
+    except Exception:  # noqa: BLE001
+        ust_saetze = _UST_SAETZE_DEFAULT
+
     unlesbar = [b for b in ctx.belege if not b.alle and b.kind != "storno"]
     findings: list[Finding] = []
     for beleg in unlesbar:
         if not beleg.text.strip():
             continue
         findings.extend(
-            _extrahiere(beleg.rel, beleg.text, llm, toleranz, kopf_laenge, summen_laenge)
+            _extrahiere(
+                beleg.rel, beleg.text, llm,
+                toleranz, kopf_laenge, summen_laenge, ust_saetze,
+            )
         )
     return findings

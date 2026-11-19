@@ -3,6 +3,7 @@
 
 Liest eine mit `fibu eval vorlage` erzeugte und manuell ausgefüllte JSON-Datei
 und vergleicht die LLM-Extraktion mit dem Gold-Standard.
+Zeigt zusätzlich die Baseline des deterministischen Legacy-Parsers.
 
 Voraussetzungen:
   EVAL_REAL_DIR  Verzeichnis mit der ausgefüllten Vorlagendatei (vorlage_*.json)
@@ -25,6 +26,7 @@ from pathlib import Path
 # Projekt-Root zum sys.path hinzufügen (Aufruf direkt aus Repo-Root)
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO / "src"))
+sys.path.insert(0, str(_REPO))  # für legacy-Imports
 
 
 def _lade_vorlage(eval_dir: Path, monat: str) -> list[dict]:
@@ -56,18 +58,46 @@ def _vergleiche(gold: str, extrahiert: str) -> bool:
 def _detail_zu_feldern(detail: str) -> dict[str, str]:
     """Extrahiert Felder aus Finding.detail-String.
 
-    'Brutto:' wird als 'betrag' gemappt – der Skill liefert brutto,
-    run_eval.py vergleicht es gegen das Gold-Feld 'betrag'.
+    'Brutto:' → 'betrag'; 'Betrag-Regel:' → 'betrag_regel' (für Diagnose).
     """
     felder: dict[str, str] = {}
     for teil in detail.split(", "):
         if teil.startswith("Brutto: "):
-            felder["betrag"] = teil[8:]   # Brutto → betrag (Punkt 3 der Anforderung)
+            felder["betrag"] = teil[8:]
+        elif teil.startswith("Betrag-Regel: "):
+            felder["betrag_regel"] = teil[14:]
         elif teil.startswith("Datum: "):
             felder["datum"] = teil[7:]
         elif teil.startswith("Nr.: "):
             felder["nummer"] = teil[5:]
     return felder
+
+
+def _format_betrag_de_simple(val: object) -> str:
+    """Minimal-Formatter für Legacy-Decimal → '1.234,56'."""
+    from decimal import Decimal
+    d = Decimal(str(val)).quantize(Decimal("0.01"))
+    s = str(d)
+    int_p, dec_p = s.split(".") if "." in s else (s, "00")
+    groups: list[str] = []
+    while len(int_p) > 3:
+        groups.insert(0, int_p[-3:])
+        int_p = int_p[:-3]
+    groups.insert(0, int_p)
+    return ".".join(groups) + "," + dec_p
+
+
+def _baseline_aus_text(text: str) -> dict[str, str]:
+    """Führt den deterministischen Legacy-Parser auf dem Belegtext aus."""
+    try:
+        from legacy.fibu_pruefer.belege import analyse
+        res = analyse(text)
+        betrag = _format_betrag_de_simple(max(res["brutto"])) if res["brutto"] else ""
+        datum = res["daten"][0] if res["daten"] else ""
+        nummer = min(res["nummern"]) if res["nummern"] else ""
+        return {"betrag": betrag, "datum": datum, "nummer": nummer}
+    except Exception as exc:  # noqa: BLE001
+        return {"betrag": "", "datum": "", "nummer": "", "_fehler": str(exc)}
 
 
 def main() -> int:
@@ -99,7 +129,6 @@ def main() -> int:
     vorlage = _lade_vorlage(eval_dir, args.ordner)
     n_gesamt = len(vorlage)
 
-    # Nur Einträge mit geprueft=true werden bewertet
     n_ungeprueft = sum(1 for e in vorlage if not e.get("geprueft", False))
     n_bewertet = n_gesamt - n_ungeprueft
 
@@ -114,15 +143,16 @@ def main() -> int:
     mod = _lade_skill()
     extrahiere = mod._extrahiere  # type: ignore[attr-defined]
 
-    treffer: dict[str, int] = {"betrag": 0, "datum": 0, "nummer": 0}
-    gesamt:  dict[str, int] = {"betrag": 0, "datum": 0, "nummer": 0}
-    leer:    dict[str, int] = {}
+    treffer:   dict[str, int] = {"betrag": 0, "datum": 0, "nummer": 0}
+    gesamt:    dict[str, int] = {"betrag": 0, "datum": 0, "nummer": 0}
+    leer:      dict[str, int] = {}
+    base_treffer: dict[str, int] = {"betrag": 0, "datum": 0, "nummer": 0}
+    base_leer:    dict[str, int] = {}
     laufzeiten: list[float] = []
 
     for eintrag in vorlage:
         rel = eintrag.get("beleg", "?")
 
-        # Nur Einträge mit geprueft=true bewerten
         if not eintrag.get("geprueft", False):
             continue
 
@@ -132,16 +162,15 @@ def main() -> int:
 
         gold_felder = {f: eintrag.get(f, "") for f in ("betrag", "datum", "nummer")}
 
+        # Baseline (deterministischer Legacy-Parser)
+        baseline = _baseline_aus_text(text)
+
         t0 = time.perf_counter()
         findings = extrahiere(rel, text, llm)
         laufzeit = time.perf_counter() - t0
         laufzeiten.append(laufzeit)
 
         detail_info = next((f.detail for f in findings if f.severity == "info"), "")
-        detail_diag = next(
-            (f.detail for f in findings if "nicht eindeutig" in f.detail or "Arithmetik" in f.detail),
-            "",
-        )
         extrahiert = _detail_zu_feldern(detail_info)
 
         print(f"  [{laufzeit:.1f}s] {rel}")
@@ -151,18 +180,33 @@ def main() -> int:
                 continue
             gesamt[feld] += 1
             got = extrahiert.get(feld, "")
+            got_base = baseline.get(feld, "")
 
+            # LLM+det. Ergebnis
             if not got:
-                # Leer: Feld nicht extrahiert (Kandidat nicht gefunden oder Index null)
                 leer[feld] = leer.get(feld, 0) + 1
-                print(f"    - {feld:<8}: leer (nicht extrahiert)")
+                llm_status = "leer"
             elif _vergleiche(gold, got):
                 treffer[feld] += 1
-                print(f"    ✓ {feld:<8}: {gold!r}")
+                llm_status = f"✓ {gold!r}"
             else:
-                print(f"    ✗ {feld:<8}: erwartet={gold!r}  erhalten={got!r}")
-                if feld == "betrag" and detail_diag:
-                    print(f"               LLM: {detail_diag[:120]}")
+                llm_status = f"✗ erwartet={gold!r} erhalten={got!r}"
+                if feld == "betrag":
+                    regel = extrahiert.get("betrag_regel", "")
+                    if regel:
+                        llm_status += f" (Regel: {regel})"
+
+            # Baseline
+            if not got_base:
+                base_leer[feld] = base_leer.get(feld, 0) + 1
+                base_status = "leer"
+            elif _vergleiche(gold, got_base):
+                base_treffer[feld] += 1
+                base_status = "✓"
+            else:
+                base_status = f"✗ {got_base!r}"
+
+            print(f"    {feld:<8}: LLM={llm_status}  |  Basis={base_status}")
 
     # Zusammenfassung
     print()
@@ -174,28 +218,63 @@ def main() -> int:
     if n_ungeprueft:
         print(f"Übersprungen : {n_ungeprueft} Einträge (geprueft=false)")
 
-    gesamt_t = sum(treffer.values())
-    gesamt_g = sum(gesamt.values())
-
     print()
-    print("Trefferquote je Feld (Richtig / Falsch / Leer / Gesamt):")
-    print(f"{'Feld':<10} {'✓':>7} {'✗':>7} {'-':>7} {'Gesamt':>8}  {'Quote*':>8}")
-    print("-" * 54)
+    _drucke_tabelle(gesamt, treffer, leer, base_treffer, base_leer)
+    return 0
+
+
+def _drucke_tabelle(
+    gesamt: dict[str, int],
+    treffer: dict[str, int],
+    leer: dict[str, int],
+    base_treffer: dict[str, int],
+    base_leer: dict[str, int],
+) -> None:
+    """Gibt Baseline und LLM+det. Ergebnis in gemeinsamer Tabelle aus."""
+    hdr = f"{'Feld':<10} {'Basis ✓':>8} {'Basis ✗':>8} {'Basis -':>8} {'Basis %':>8}  {'LLM ✓':>7} {'LLM ✗':>7} {'LLM -':>7} {'LLM %':>7}"
+    print(hdr)
+    print("-" * len(hdr))
+
     for feld in ("betrag", "datum", "nummer"):
         g = gesamt[feld]
-        t = treffer[feld]
-        le = leer.get(feld, 0)
-        falsch = g - t - le
-        q = f"{t / g * 100:.1f} %" if g else "–"
-        print(f"{feld:<10} {t:>7} {falsch:>7} {le:>7} {g:>8}  {q:>8}")
-    print("-" * 54)
-    q_ges = f"{gesamt_t / gesamt_g * 100:.1f} %" if gesamt_g else "–"
-    gesamt_leer = sum(leer.values())
-    gesamt_falsch = gesamt_g - gesamt_t - gesamt_leer
-    print(f"{'gesamt':<10} {gesamt_t:>7} {gesamt_falsch:>7} {gesamt_leer:>7} {gesamt_g:>8}  {q_ges:>8}")
-    print("* Quote = Richtig / Gesamt")
+        if g == 0:
+            continue
 
-    return 0
+        bt = base_treffer[feld]
+        bl = base_leer.get(feld, 0)
+        bf = g - bt - bl
+        bq = f"{bt / g * 100:.1f}%" if g else "–"
+
+        lt = treffer[feld]
+        ll = leer.get(feld, 0)
+        lf = g - lt - ll
+        lq = f"{lt / g * 100:.1f}%" if g else "–"
+
+        print(
+            f"{feld:<10} {bt:>8} {bf:>8} {bl:>8} {bq:>8}  "
+            f"{lt:>7} {lf:>7} {ll:>7} {lq:>7}"
+        )
+
+    print("-" * len(hdr))
+    g_all = sum(gesamt.values())
+    if g_all == 0:
+        return
+
+    bt_all = sum(base_treffer.values())
+    bl_all = sum(base_leer.values())
+    bf_all = g_all - bt_all - bl_all
+    bq_all = f"{bt_all / g_all * 100:.1f}%"
+
+    lt_all = sum(treffer.values())
+    ll_all = sum(leer.values())
+    lf_all = g_all - lt_all - ll_all
+    lq_all = f"{lt_all / g_all * 100:.1f}%"
+
+    print(
+        f"{'gesamt':<10} {bt_all:>8} {bf_all:>8} {bl_all:>8} {bq_all:>8}  "
+        f"{lt_all:>7} {lf_all:>7} {ll_all:>7} {lq_all:>7}"
+    )
+    print("* Quote = Richtig / Gesamt; Basis = deterministischer Legacy-Parser; LLM = det. Betrag + LLM Datum/Nr.")
 
 
 if __name__ == "__main__":

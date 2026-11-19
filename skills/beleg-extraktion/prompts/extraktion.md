@@ -7,13 +7,9 @@ Extrahiere Rechnungsfelder. Wähle je Feld den Index des passenden Kandidaten od
 {{ summenblock }}
 
 ---KANDIDATEN---
-Beträge (brutto = Zahlbetrag inkl. USt):  {{ betraege }}
-Datumsangaben (DD.MM.JJJJ):               {{ datumsangaben }}
-Nummern:                                  {{ nummern }}
+Datumsangaben (DD.MM.JJJJ):  {{ datumsangaben }}
+Nummern:                      {{ nummern }}
 
-Antworte ausschließlich als JSON mit fünf Feldern (Integer oder null):
-brutto_idx – Index des Brutto-Gesamtbetrags (der gezahlte Endbetrag inkl. USt)
-netto_idx  – Index des Netto-Betrags ohne USt; null wenn nicht ausgewiesen
-ust_idx    – Index des Umsatzsteuerbetrags; null wenn keine USt (z. B. Auslandsbeleg)
+Antworte ausschließlich als JSON mit zwei Feldern (Integer oder null):
 datum_idx  – Index des Rechnungs-/Belegdatums
 nummer_idx – Index der Rechnungs-/Belegnummer
