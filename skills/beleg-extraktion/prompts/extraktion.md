@@ -1,14 +1,19 @@
-Du bist ein Buchhaltungs-Assistent. Extrahiere aus dem folgenden Belegtext die fünf Felder.
+Extrahiere Rechnungsfelder. Wähle je Feld den Index des passenden Kandidaten oder null.
 
----BELEGTEXT ANFANG---
-{{ belegtext }}
----BELEGTEXT ENDE---
+---BELEGKOPF---
+{{ kopf }}
 
-Regeln:
-- brutto: Gesamtbetrag inklusive Umsatzsteuer, der gezahlt wird (z. B. "152,32"). Leer lassen wenn nicht eindeutig erkennbar.
-- netto: Betrag vor Umsatzsteuer, also ohne MwSt. (z. B. "128,00"). Leer lassen wenn nicht eindeutig erkennbar.
-- ust: Umsatzsteuerbetrag (z. B. "24,32"). Leer lassen wenn nicht eindeutig erkennbar.
-- datum: Rechnungsdatum im Format TT.MM.JJJJ. Leer lassen wenn nicht eindeutig erkennbar.
-- nummer: Rechnungs- oder Belegnummer. Leer lassen wenn nicht eindeutig erkennbar.
+---SUMMENZEILEN---
+{{ summenblock }}
 
-Antworte ausschließlich als JSON mit den Feldern "brutto", "netto", "ust", "datum" und "nummer".
+---KANDIDATEN---
+Beträge (brutto = Zahlbetrag inkl. USt):  {{ betraege }}
+Datumsangaben (DD.MM.JJJJ):               {{ datumsangaben }}
+Nummern:                                  {{ nummern }}
+
+Antworte ausschließlich als JSON mit fünf Feldern (Integer oder null):
+brutto_idx – Index des Brutto-Gesamtbetrags (der gezahlte Endbetrag inkl. USt)
+netto_idx  – Index des Netto-Betrags ohne USt; null wenn nicht ausgewiesen
+ust_idx    – Index des Umsatzsteuerbetrags; null wenn keine USt (z. B. Auslandsbeleg)
+datum_idx  – Index des Rechnungs-/Belegdatums
+nummer_idx – Index der Rechnungs-/Belegnummer

@@ -115,7 +115,8 @@ def main() -> int:
     extrahiere = mod._extrahiere  # type: ignore[attr-defined]
 
     treffer: dict[str, int] = {"betrag": 0, "datum": 0, "nummer": 0}
-    gesamt: dict[str, int] = {"betrag": 0, "datum": 0, "nummer": 0}
+    gesamt:  dict[str, int] = {"betrag": 0, "datum": 0, "nummer": 0}
+    leer:    dict[str, int] = {}
     laufzeiten: list[float] = []
 
     for eintrag in vorlage:
@@ -136,29 +137,32 @@ def main() -> int:
         laufzeit = time.perf_counter() - t0
         laufzeiten.append(laufzeit)
 
-        # Extrahierte Felder aus info-Finding; Diagnose-Detail aus pruefen-Finding
         detail_info = next((f.detail for f in findings if f.severity == "info"), "")
         detail_diag = next(
-            (f.detail for f in findings if "nicht eindeutig" in f.detail or "Guard" in f.detail),
+            (f.detail for f in findings if "nicht eindeutig" in f.detail or "Arithmetik" in f.detail),
             "",
         )
         extrahiert = _detail_zu_feldern(detail_info)
 
+        print(f"  [{laufzeit:.1f}s] {rel}")
         for feld in ("betrag", "datum", "nummer"):
             gold = gold_felder[feld]
             if not gold.strip():
                 continue
             gesamt[feld] += 1
-            ok = _vergleiche(gold, extrahiert.get(feld, ""))
-            if ok:
+            got = extrahiert.get(feld, "")
+
+            if not got:
+                # Leer: Feld nicht extrahiert (Kandidat nicht gefunden oder Index null)
+                leer[feld] = leer.get(feld, 0) + 1
+                print(f"    - {feld:<8}: leer (nicht extrahiert)")
+            elif _vergleiche(gold, got):
                 treffer[feld] += 1
-                print(f"  ✓ {rel}: {feld}={gold!r}")
+                print(f"    ✓ {feld:<8}: {gold!r}")
             else:
-                got = extrahiert.get(feld, "(leer)")
-                print(f"  ✗ {rel}: {feld}  erwartet={gold!r}  erhalten={got!r}")
-                # Für betrag: Netto/USt/Brutto-Aufschlüsselung anzeigen (Punkt 4)
+                print(f"    ✗ {feld:<8}: erwartet={gold!r}  erhalten={got!r}")
                 if feld == "betrag" and detail_diag:
-                    print(f"         LLM: {detail_diag[:120]}")
+                    print(f"               LLM: {detail_diag[:120]}")
 
     # Zusammenfassung
     print()
@@ -174,17 +178,22 @@ def main() -> int:
     gesamt_g = sum(gesamt.values())
 
     print()
-    print("Trefferquote je Feld:")
-    print(f"{'Feld':<12} {'Treffer':>8} {'Gesamt':>8} {'Quote':>9}")
-    print("-" * 44)
+    print("Trefferquote je Feld (Richtig / Falsch / Leer / Gesamt):")
+    print(f"{'Feld':<10} {'✓':>7} {'✗':>7} {'-':>7} {'Gesamt':>8}  {'Quote*':>8}")
+    print("-" * 54)
     for feld in ("betrag", "datum", "nummer"):
         g = gesamt[feld]
         t = treffer[feld]
+        le = leer.get(feld, 0)
+        falsch = g - t - le
         q = f"{t / g * 100:.1f} %" if g else "–"
-        print(f"{feld:<12} {t:>8} {g:>8} {q:>9}")
-    print("-" * 44)
+        print(f"{feld:<10} {t:>7} {falsch:>7} {le:>7} {g:>8}  {q:>8}")
+    print("-" * 54)
     q_ges = f"{gesamt_t / gesamt_g * 100:.1f} %" if gesamt_g else "–"
-    print(f"{'gesamt':<12} {gesamt_t:>8} {gesamt_g:>8} {q_ges:>9}")
+    gesamt_leer = sum(leer.values())
+    gesamt_falsch = gesamt_g - gesamt_t - gesamt_leer
+    print(f"{'gesamt':<10} {gesamt_t:>7} {gesamt_falsch:>7} {gesamt_leer:>7} {gesamt_g:>8}  {q_ges:>8}")
+    print("* Quote = Richtig / Gesamt")
 
     return 0
 

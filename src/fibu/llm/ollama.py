@@ -62,6 +62,7 @@ class OllamaClient:
             "prompt": prompt,
             "stream": False,
             "options": {"temperature": self._config.temperatur},
+            "keep_alive": self._config.keep_alive,
         }
         if json_schema is not None:
             body["format"] = json_schema
