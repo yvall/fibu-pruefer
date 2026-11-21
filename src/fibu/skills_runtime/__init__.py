@@ -26,12 +26,14 @@ def run_skills(
     ctx: Context,
     skills_dir: Path,
     llm: LlmClient | None = None,
+    experimentelle_aktiv: bool = False,
 ) -> list[SkillResult]:
     """Lädt alle Skills, sortiert nach Abhängigkeiten und führt sie wellenweise parallel aus.
 
     Ein fehlerhafter Skill erzeugt ein Finding „Prüfung nicht durchgeführt" und
     bricht den Gesamtlauf nicht ab.
     llm: LlmClient-Instanz für LLM-Skills; None → NullLlmClient (kein LLM-Aufruf).
+    experimentelle_aktiv: Skills mit status=experimental werden nur ausgeführt, wenn True.
     """
     manifests = load_manifests(skills_dir)
     if not manifests:
@@ -40,7 +42,10 @@ def run_skills(
     results: list[SkillResult] = []
     with ThreadPoolExecutor() as pool:
         for wave in waves:
-            futures = {pool.submit(run_one_skill, m, ctx, llm): m for m in wave}
+            futures = {
+                pool.submit(run_one_skill, m, ctx, llm, experimentelle_aktiv): m
+                for m in wave
+            }
             for future in futures:
                 result = future.result()
                 results.append(result)

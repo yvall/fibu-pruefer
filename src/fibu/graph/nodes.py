@@ -87,10 +87,14 @@ def fuehre_skills_aus(
     state: PruefState,
     store: LaufStore,
     llm: LlmClient | None = None,
+    experimentelle_aktiv: bool = False,
 ) -> dict[str, object]:
     ctx = store.lade_kontext(state["lauf_id"])
     skills_dir = Path(state["skills_dir"])
-    results: list[SkillResult] = run_skills(ctx, skills_dir=skills_dir, llm=llm)
+    results: list[SkillResult] = run_skills(
+        ctx, skills_dir=skills_dir, llm=llm,
+        experimentelle_aktiv=experimentelle_aktiv,
+    )
     return {"skill_results": results}
 
 

@@ -21,8 +21,12 @@ def _manifest(
     check_path: Path,
     skill_id: str = "test-skill",
     braucht_llm: bool = False,
+    status: str = "stable",
 ) -> SkillManifest:
-    return SkillManifest(skill_id=skill_id, check_path=check_path, braucht_llm=braucht_llm)
+    return SkillManifest(
+        skill_id=skill_id, check_path=check_path,
+        braucht_llm=braucht_llm, status=status,
+    )
 
 
 class _MockLlmClient:
@@ -233,3 +237,119 @@ def test_run_skills_mixed_llm_und_normaler_skill(tmp_path: Path) -> None:
     llm_r = next(r for r in results if r.skill_id == "llm-skill")
     assert normal_r.findings[0].title == "N"
     assert llm_r.findings[0].title == "LLM nicht konfiguriert"
+
+
+# ---------------------------------------------------------------------------
+# Experimentelle Skills (status: experimental)
+# ---------------------------------------------------------------------------
+
+def test_experimentell_deaktiviert_keine_findings(tmp_path: Path) -> None:
+    """Experimenteller Skill mit experimentelle_aktiv=False → keine Findings."""
+    check_py = tmp_path / "check.py"
+    check_py.write_text("raise AssertionError('darf nicht importiert werden')\n")
+    result = run_one_skill(
+        _manifest(check_py, "exp-skill", braucht_llm=True, status="experimental"),
+        _ctx(),
+        NullLlmClient(),
+        experimentelle_aktiv=False,
+    )
+    assert result.findings == []
+    assert result.error is None
+
+
+def test_experimentell_deaktiviert_flags(tmp_path: Path) -> None:
+    """Deaktivierter experimenteller Skill setzt experimentell=True, deaktiviert=True."""
+    check_py = tmp_path / "check.py"
+    check_py.write_text("")
+    result = run_one_skill(
+        _manifest(check_py, "exp", status="experimental"),
+        _ctx(),
+        experimentelle_aktiv=False,
+    )
+    assert result.experimentell is True
+    assert result.deaktiviert is True
+
+
+def test_experimentell_deaktiviert_importiert_nicht(tmp_path: Path) -> None:
+    """check.py mit Absturz-Import darf nicht importiert werden wenn deaktiviert."""
+    check_py = tmp_path / "check.py"
+    check_py.write_text("raise ImportError('Dieser Import darf nicht passieren')\n")
+    result = run_one_skill(
+        _manifest(check_py, "exp", status="experimental"),
+        _ctx(),
+        experimentelle_aktiv=False,
+    )
+    assert result.error is None
+
+
+def test_experimentell_aktiv_laeuft_durch(tmp_path: Path) -> None:
+    """Experimenteller Skill mit experimentelle_aktiv=True läuft normal."""
+    check_py = tmp_path / "check.py"
+    check_py.write_text(
+        "from fibu.contracts import Finding\n"
+        "def run(ctx, llm):\n"
+        "    return [Finding(rule='exp', severity='info', title='Exp-OK', detail='')]\n"
+    )
+    result = run_one_skill(
+        _manifest(check_py, "exp", braucht_llm=True, status="experimental"),
+        _ctx(),
+        _MockLlmClient(),
+        experimentelle_aktiv=True,
+    )
+    assert result.findings[0].title == "Exp-OK"
+    assert result.experimentell is True
+    assert result.deaktiviert is False
+
+
+def test_experimentell_aktiv_setzt_flag(tmp_path: Path) -> None:
+    """Aktiv ausgeführter experimenteller Skill hat experimentell=True."""
+    check_py = tmp_path / "check.py"
+    check_py.write_text("def run(ctx): return []\n")
+    result = run_one_skill(
+        _manifest(check_py, "exp", status="experimental"),
+        _ctx(),
+        experimentelle_aktiv=True,
+    )
+    assert result.experimentell is True
+    assert result.deaktiviert is False
+
+
+def test_stable_skill_nicht_als_experimentell_markiert(tmp_path: Path) -> None:
+    """Normaler Skill hat experimentell=False."""
+    check_py = tmp_path / "check.py"
+    check_py.write_text("def run(ctx): return []\n")
+    result = run_one_skill(_manifest(check_py, "normal"), _ctx())
+    assert result.experimentell is False
+    assert result.deaktiviert is False
+
+
+def test_run_skills_experimentell_deaktiviert_per_default(tmp_path: Path) -> None:
+    """run_skills() ohne experimentelle_aktiv → experimenteller Skill liefert keine Findings."""
+    from fibu.skills_runtime import run_skills
+
+    d = tmp_path / "exp-skill"
+    d.mkdir()
+    (d / "SKILL.md").write_text("---\nname: exp-skill\nllm: true\nstatus: experimental\n---\n")
+    (d / "check.py").write_text("raise AssertionError('darf nicht laufen')\n")
+
+    results = run_skills(_ctx(), tmp_path, llm=NullLlmClient())
+    assert len(results) == 1
+    r = results[0]
+    assert r.findings == []
+    assert r.deaktiviert is True
+
+
+def test_run_skills_experimentell_aktiv_schalter(tmp_path: Path) -> None:
+    """run_skills() mit experimentelle_aktiv=True → experimenteller LLM-Skill bekommt Fallback."""
+    from fibu.skills_runtime import run_skills
+
+    d = tmp_path / "exp-skill"
+    d.mkdir()
+    (d / "SKILL.md").write_text("---\nname: exp-skill\nllm: true\nstatus: experimental\n---\n")
+    (d / "check.py").write_text("def run(ctx, llm): return []\n")
+
+    # Mit NullLlmClient und aktivem Schalter: Skill läuft, bekommt Fallback-Finding
+    results = run_skills(_ctx(), tmp_path, llm=NullLlmClient(), experimentelle_aktiv=True)
+    assert len(results) == 1
+    assert results[0].findings[0].title == "LLM nicht konfiguriert"
+    assert results[0].deaktiviert is False

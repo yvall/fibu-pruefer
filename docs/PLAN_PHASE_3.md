@@ -338,6 +338,47 @@ expected_text_contains: ["Rückfrage", "Konto"]  # optional
 
 ---
 
+## Entscheidung: beleg-extraktion bleibt experimentell (2026-11-21)
+
+### Eval-Ergebnis (Mistral:latest, 12 geprüfte Belege, ∅ 29 s/Beleg)
+
+| Feld    | Basis/Legacy | LLM-Pipeline |
+|---------|-------------|--------------|
+| Betrag  | 83,3 %      | 75,0 %       |
+| Datum   | 50,0 %      | 58,3 %       |
+| Nummer  | 66,7 %      | 50,0 %       |
+| **Gesamt**  | **66,7 %**  | **61,1 %**   |
+
+Betrag wird seit 2026-11-19 deterministisch gewählt (Regeln A/B/C), ist nicht mehr
+vom LLM abhängig und landet deshalb in beiden Spalten auf demselben Wert.
+Qwen-Vergleich steht noch aus.
+
+### Begründung
+
+Die LLM-Pipeline verbessert Datum gegenüber der Basis (+8,3 Pp.), verschlechtert
+aber Nummer (−16,7 Pp.) und Betrag (−8,3 Pp.). Gesamt liegt sie 5,6 Pp. unter dem
+Legacy-Parser. Die Kombination ist damit noch nicht „mindestens so gut wie Legacy
+allein". Zudem liegt der Stichprobenumfang (12 Belege) deutlich unter dem
+Mindest-Schwellenwert von 25 geprüften Belegen.
+
+**Folge:** `beleg-extraktion` erhält `status: experimental` und ist standardmäßig
+deaktiviert (`llm.experimentelle_skills_aktiv: false`). Der Skill läuft im Prüfbericht
+nur, wenn der Schalter explizit gesetzt wird. Der Bericht kennzeichnet seinen
+Abschnitt mit *(experimentell)*.
+
+### Kriterien für Beförderung zu `stable`
+
+Ein Upgrade von `experimental` auf `stable` ist freigegeben, wenn alle drei
+Bedingungen gleichzeitig erfüllt sind:
+
+1. **Stichprobe:** Mindestens 25 geprüfte Belege (geprueft=true in der Vorlage).
+2. **Falsch-Anteil:** Höchstens 10 % je Feld (Betrag, Datum, Nummer).
+3. **Netto-Nutzen:** Die Kombination (Basis + LLM für Felder, die die Basis leer
+   lässt) erzielt eine Einsatzfall-Quote von mindestens dem Basis-Niveau (d. h.
+   der Skill schadet nicht, wo die Basis bereits funktioniert).
+
+---
+
 ## Risiken und Gegenmaßnahmen
 
 | Risiko | Wahrscheinlichkeit | Gegenmaßnahme |

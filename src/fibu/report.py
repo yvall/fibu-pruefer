@@ -228,6 +228,26 @@ def to_markdown(a: Auswertung, results: list[SkillResult]) -> str:
             lines.append(f"- **{sid}**: {err.splitlines()[0] if err else '?'}")
         lines.append("")
 
+    # KI-gestützt: experimentelle Skills
+    exp_results = [r for r in results if r.experimentell]
+    if exp_results:
+        lines += ["## 🤖 KI-gestützt", ""]
+        deaktiviert = [r for r in exp_results if r.deaktiviert]
+        aktiv = [r for r in exp_results if not r.deaktiviert]
+        if deaktiviert:
+            sid_liste = ", ".join(r.skill_id for r in deaktiviert)
+            lines.append(f"*Hinweis: experimentelle Skills deaktiviert ({sid_liste})*")
+            lines.append("")
+        for r in aktiv:
+            lines.append(f"### {r.skill_id} *(experimentell)*")
+            if r.findings:
+                for f in r.findings:
+                    lines.append(f"- **{f.title}**  ")
+                    lines.append(f"  {f.detail}")
+            else:
+                lines.append("*Keine Befunde.*")
+            lines.append("")
+
     return "\n".join(lines)
 
 

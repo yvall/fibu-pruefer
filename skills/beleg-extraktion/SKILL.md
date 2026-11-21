@@ -6,6 +6,7 @@ beschreibung: >
   per LLM. Nur Belege ohne erkannte Beträge (alle=[]) werden
   verarbeitet – alle anderen überspringt der Skill.
 llm: true
+status: experimental
 runs_after: []
 inputs:
   - context.belege

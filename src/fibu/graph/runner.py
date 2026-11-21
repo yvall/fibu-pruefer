@@ -24,8 +24,13 @@ def _invoke(
     thread_id: str,
     mail_sender: MailSender | None = None,
     llm: LlmClient | None = None,
+    experimentelle_aktiv: bool = False,
 ) -> PruefState:
-    graph = create_graph(store, checkpointer, mail_sender=mail_sender, llm=llm)
+    graph = create_graph(
+        store, checkpointer,
+        mail_sender=mail_sender, llm=llm,
+        experimentelle_aktiv=experimentelle_aktiv,
+    )
     result: PruefState = graph.invoke(  # type: ignore[assignment]
         initial,
         config={"configurable": {"thread_id": thread_id}},
@@ -63,6 +68,7 @@ def run_pruefung(
             from fibu.llm.null import NullLlmClient
             llm = NullLlmClient()
 
+    experimentelle_aktiv = cfg.llm.experimentelle_skills_aktiv
     lauf_id = str(uuid.uuid4())
     store.erstelle_lauf(lauf_id, str(ordner.expanduser().resolve()))
 
@@ -78,15 +84,15 @@ def run_pruefung(
     null_sender = NullMailSender()
 
     if _checkpointer is not None:
-        result = _invoke(initial, store, _checkpointer, lauf_id, null_sender, llm)
+        result = _invoke(initial, store, _checkpointer, lauf_id, null_sender, llm, experimentelle_aktiv)
     elif mit_mail:
         db_pfad = str(cfg.store.sqlite_pfad)
         from langgraph.checkpoint.sqlite import SqliteSaver
         with SqliteSaver.from_conn_string(db_pfad) as saver:
             cp = saver.with_allowlist(MSGPACK_ALLOWLIST)
-            result = _invoke(initial, store, cp, lauf_id, null_sender, llm)
+            result = _invoke(initial, store, cp, lauf_id, null_sender, llm, experimentelle_aktiv)
     else:
-        result = _invoke(initial, store, MemorySaver(), lauf_id, null_sender, llm)
+        result = _invoke(initial, store, MemorySaver(), lauf_id, null_sender, llm, experimentelle_aktiv)
 
     # Lauf-Status nachführen
     if result.get("fehler"):

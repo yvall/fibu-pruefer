@@ -18,6 +18,7 @@ class LlmConfig(BaseModel):
     timeout_sekunden: int = 120
     modell_zuordnung: dict[str, str] = Field(default_factory=dict)
     keep_alive: str = "5m"  # Wie lange das Modell geladen bleibt (z. B. "5m", "-1" = dauerhaft)
+    experimentelle_skills_aktiv: bool = False  # Skills mit status=experimental einschalten
 
 
 class MailConfig(BaseModel):

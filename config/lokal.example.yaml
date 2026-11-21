@@ -35,3 +35,4 @@ llm:
   # modell_zuordnung:               # optionales Modell je Skill-ID
   #   beleg-extraktion: llama3:8b
   #   rueckfrage-entwurf: mistral:latest
+  experimentelle_skills_aktiv: false  # true: Skills mit status=experimental einschalten

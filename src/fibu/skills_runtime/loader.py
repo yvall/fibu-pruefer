@@ -19,6 +19,7 @@ class SkillManifest:
     inputs: list[str] = field(default_factory=list)
     check_path: Path = field(default_factory=Path)
     braucht_llm: bool = False
+    status: str = "stable"   # "stable" | "experimental"
 
 
 def _parse_frontmatter(text: str) -> dict[str, Any]:
@@ -52,6 +53,7 @@ def load_manifests(skills_dir: Path) -> list[SkillManifest]:
                 inputs=[str(x) for x in (fm.get("inputs") or [])],
                 check_path=skill_md.parent / "check.py",
                 braucht_llm=bool(fm.get("llm")),
+                status=str(fm.get("status") or "stable"),
             )
         )
     return manifests

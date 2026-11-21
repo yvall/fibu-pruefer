@@ -114,3 +114,25 @@ def test_load_manifests_defaults_for_minimal_frontmatter(tmp_path: Path) -> None
     assert m.kind == "code"
     assert m.runs_after == []
     assert m.severity_default == "fehler"
+    assert m.status == "stable"
+
+
+def test_load_manifests_status_experimental(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "exp-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("---\nstatus: experimental\n---\n")
+    manifests = load_manifests(tmp_path)
+    assert manifests[0].status == "experimental"
+
+
+def test_load_manifests_status_stable_explicit(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "stabil"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("---\nstatus: stable\n---\n")
+    manifests = load_manifests(tmp_path)
+    assert manifests[0].status == "stable"
+
+
+def test_parse_frontmatter_status() -> None:
+    fm = _parse_frontmatter("---\nstatus: experimental\nllm: true\n---\n")
+    assert fm["status"] == "experimental"

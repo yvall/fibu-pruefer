@@ -20,15 +20,28 @@ class SkillResult:
     # (z. B. changed_accounts nach vormonat-fortschreibung).
     meta: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
+    experimentell: bool = False   # True wenn manifest.status == "experimental"
+    deaktiviert: bool = False     # True wenn experimentell und experimentelle_aktiv=False
 
 
 def run_one_skill(
     manifest: SkillManifest,
     ctx: Context,
     llm: LlmClient | None = None,
+    experimentelle_aktiv: bool = False,
 ) -> SkillResult:
     """Führt einen einzelnen Skill aus. Fehler erzeugen ein Finding und brechen den Lauf nicht ab."""
+    ist_experimentell = manifest.status == "experimental"
     effective_llm: LlmClient = llm if llm is not None else NullLlmClient()
+
+    # Experimentelle Skills werden übersprungen, wenn der Schalter inaktiv ist.
+    # Kein Befund, kein Modellaufruf, kein Import.
+    if ist_experimentell and not experimentelle_aktiv:
+        return SkillResult(
+            skill_id=manifest.skill_id,
+            experimentell=True,
+            deaktiviert=True,
+        )
 
     # E7: Fallback-Check vor Modulimport – LLM-Skill ohne LLM gibt info-Finding
     if manifest.braucht_llm and isinstance(effective_llm, NullLlmClient):
@@ -81,7 +94,12 @@ def run_one_skill(
             findings = run_fn(ctx)
 
         meta: dict[str, Any] = getattr(mod, "_meta", {})
-        return SkillResult(skill_id=manifest.skill_id, findings=findings, meta=meta)
+        return SkillResult(
+            skill_id=manifest.skill_id,
+            findings=findings,
+            meta=meta,
+            experimentell=ist_experimentell,
+        )
     except Exception as exc:  # noqa: BLE001
         return SkillResult(
             skill_id=manifest.skill_id,

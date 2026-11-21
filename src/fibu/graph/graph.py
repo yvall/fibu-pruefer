@@ -40,6 +40,7 @@ def create_graph(
     checkpointer: BaseCheckpointSaver[Any] | None = None,
     mail_sender: MailSender | None = None,
     llm: LlmClient | None = None,
+    experimentelle_aktiv: bool = False,
 ) -> CompiledStateGraph:  # type: ignore[type-arg]
     """Baut und kompiliert den Prüf-Graph.
 
@@ -47,6 +48,7 @@ def create_graph(
     checkpointer ist für interrupt()/resume erforderlich; ohne ihn kein Interrupt.
     mail_sender: NullMailSender wenn None (Trockenlauf oder kein --mail).
     llm: NullLlmClient wenn None (LLM-Skills geben info-Finding zurück).
+    experimentelle_aktiv: Skills mit status=experimental nur ausführen wenn True.
     """
     from fibu.ingest.mail import NullMailSender
 
@@ -55,7 +57,7 @@ def create_graph(
     g: StateGraph[PruefState] = StateGraph(PruefState)
 
     g.add_node("lade_kontext",        lambda s: lade_kontext(s, store))
-    g.add_node("fuehre_skills_aus",   lambda s: fuehre_skills_aus(s, store, llm))
+    g.add_node("fuehre_skills_aus",   lambda s: fuehre_skills_aus(s, store, llm, experimentelle_aktiv))
     g.add_node("bewerte",             lambda s: bewerte(s, store))
     g.add_node("erstelle_bericht",    lambda s: erstelle_bericht(s, store))
     g.add_node("warte_auf_freigabe",  lambda s: warte_auf_freigabe(s, store))
