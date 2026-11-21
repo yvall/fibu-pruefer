@@ -144,3 +144,13 @@ def test_neue_datei_erhaelt_rechte_0600(tmp_path: Path) -> None:
     store.close()
     modus = db.stat().st_mode & 0o777
     assert modus == 0o600, f"Erwartet 0600, erhalten {oct(modus)}"
+
+
+def test_findings_experimentell_roundtrip(store: LaufStore) -> None:
+    """experimentell und deaktiviert überleben den JSON-Roundtrip – scheitert ohne Fix."""
+    r = SkillResult(skill_id="exp-skill", findings=[], experimentell=True, deaktiviert=True)
+    store.erstelle_lauf("lauf-1", "/ordner")
+    store.speichere_findings("lauf-1", [r])
+    geladen = store.lade_findings("lauf-1")
+    assert geladen[0].experimentell is True   # scheitert ohne Fix in _result_to_dict/_from_dict
+    assert geladen[0].deaktiviert is True     # scheitert ohne Fix

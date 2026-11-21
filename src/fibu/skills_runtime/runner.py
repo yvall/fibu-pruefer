@@ -58,6 +58,7 @@ def run_one_skill(
                     ),
                 )
             ],
+            experimentell=ist_experimentell,
         )
 
     if not manifest.check_path.exists():
@@ -72,6 +73,7 @@ def run_one_skill(
                 )
             ],
             error="check.py nicht gefunden",
+            experimentell=ist_experimentell,
         )
     try:
         spec = importlib.util.spec_from_file_location(
@@ -112,4 +114,5 @@ def run_one_skill(
                 )
             ],
             error=traceback.format_exc(),
+            experimentell=ist_experimentell,
         )

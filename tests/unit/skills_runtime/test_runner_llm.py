@@ -353,3 +353,45 @@ def test_run_skills_experimentell_aktiv_schalter(tmp_path: Path) -> None:
     assert len(results) == 1
     assert results[0].findings[0].title == "LLM nicht konfiguriert"
     assert results[0].deaktiviert is False
+
+
+# ---------------------------------------------------------------------------
+# experimentell-Flag in Fehlerpfaden (je Test scheitert ohne den Fix)
+# ---------------------------------------------------------------------------
+
+def test_e7_fallback_experimentell_flag_gesetzt(tmp_path: Path) -> None:
+    """E7-Fallback (braucht_llm + NullLlmClient) setzt experimentell – scheitert ohne Fix."""
+    check_py = tmp_path / "check.py"
+    check_py.write_text("def run(ctx, llm): return []\n")
+    result = run_one_skill(
+        _manifest(check_py, "exp-llm", braucht_llm=True, status="experimental"),
+        _ctx(),
+        NullLlmClient(),
+        experimentelle_aktiv=True,  # Schalter aktiv → E7-Pfad, kein Deaktiviert-Pfad
+    )
+    assert result.findings[0].title == "LLM nicht konfiguriert"
+    assert result.experimentell is True  # scheitert ohne Fix
+
+
+def test_check_py_fehlt_experimentell_flag_gesetzt(tmp_path: Path) -> None:
+    """check.py nicht gefunden + experimenteller Skill → experimentell=True gesetzt."""
+    result = run_one_skill(
+        _manifest(tmp_path / "nonexistent.py", "exp-skill", status="experimental"),
+        _ctx(),
+        experimentelle_aktiv=True,
+    )
+    assert result.error is not None
+    assert result.experimentell is True  # scheitert ohne Fix
+
+
+def test_exception_handler_experimentell_flag_gesetzt(tmp_path: Path) -> None:
+    """Laufzeitfehler in check.py + experimenteller Skill → experimentell=True gesetzt."""
+    check_py = tmp_path / "check.py"
+    check_py.write_text("def run(ctx): raise ValueError('Absturz')\n")
+    result = run_one_skill(
+        _manifest(check_py, "exp-skill", status="experimental"),
+        _ctx(),
+        experimentelle_aktiv=True,
+    )
+    assert result.error is not None
+    assert result.experimentell is True  # scheitert ohne Fix

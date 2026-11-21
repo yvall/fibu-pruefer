@@ -50,6 +50,8 @@ def _result_to_dict(r: SkillResult) -> dict[str, Any]:
         "skill_id": r.skill_id,
         "findings": [f.model_dump(mode="json") for f in r.findings],
         "error": r.error,
+        "experimentell": r.experimentell,
+        "deaktiviert": r.deaktiviert,
     }
 
 
@@ -58,6 +60,8 @@ def _result_from_dict(d: dict[str, Any]) -> SkillResult:
         skill_id=d["skill_id"],
         findings=[Finding.model_validate(f) for f in d["findings"]],
         error=d.get("error"),
+        experimentell=d.get("experimentell", False),
+        deaktiviert=d.get("deaktiviert", False),
     )
 
 
