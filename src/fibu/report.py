@@ -130,7 +130,7 @@ def ergebnisaussage(a: Auswertung, results: list[SkillResult]) -> list[tuple[str
 
 
 def overall_severity(results: list[SkillResult]) -> str:
-    sevs = {f.severity for r in results for f in r.findings}
+    sevs = {f.severity for r in results if not r.experimentell for f in r.findings}
     if "fehler" in sevs:
         return "fehler"
     if "pruefen" in sevs:
@@ -140,8 +140,9 @@ def overall_severity(results: list[SkillResult]) -> str:
 
 def to_markdown(a: Auswertung, results: list[SkillResult]) -> str:
     sev = overall_severity(results)
-    n_skills = len(results)
-    n_findings = sum(len(r.findings) for r in results)
+    nicht_exp = [r for r in results if not r.experimentell]
+    n_skills = len(nicht_exp)
+    n_findings = sum(len(r.findings) for r in nicht_exp)
 
     icon_map = {"fehler": "🔴", "pruefen": "🟡", "ok": "🟢"}
     text_map = {
@@ -190,11 +191,11 @@ def to_markdown(a: Auswertung, results: list[SkillResult]) -> str:
             "",
         ]
 
-    # Befunde nach Schweregrad
+    # Befunde nach Schweregrad – nur nicht-experimentelle Skills
     for severity in ("fehler", "pruefen", "info"):
         relevant = [
             (r, f)
-            for r in results
+            for r in nicht_exp
             for f in r.findings
             if f.severity == severity
         ]
@@ -210,8 +211,8 @@ def to_markdown(a: Auswertung, results: list[SkillResult]) -> str:
             lines.append(f"  {f.detail}")
         lines.append("")
 
-    # Skills ohne Befund
-    ok_skills = [r.skill_id for r in results if not r.findings and not r.error]
+    # Skills ohne Befund – nur nicht-experimentelle
+    ok_skills = [r.skill_id for r in nicht_exp if not r.findings and not r.error]
     if ok_skills:
         lines += [
             "## 🟢 Ohne Befund",
@@ -220,15 +221,15 @@ def to_markdown(a: Auswertung, results: list[SkillResult]) -> str:
             "",
         ]
 
-    # Fehler beim Skill-Lauf
-    errors = [(r.skill_id, r.error) for r in results if r.error]
+    # Fehler beim Skill-Lauf – nur nicht-experimentelle
+    errors = [(r.skill_id, r.error) for r in nicht_exp if r.error]
     if errors:
         lines += ["## ⚠️ Skill-Fehler", ""]
         for sid, err in errors:
             lines.append(f"- **{sid}**: {err.splitlines()[0] if err else '?'}")
         lines.append("")
 
-    # KI-gestützt: experimentelle Skills
+    # KI-gestützt: experimentelle Skills (Findings NUR hier, nicht in obigen Abschnitten)
     exp_results = [r for r in results if r.experimentell]
     if exp_results:
         lines += ["## 🤖 KI-gestützt", ""]
@@ -240,7 +241,9 @@ def to_markdown(a: Auswertung, results: list[SkillResult]) -> str:
             lines.append("")
         for r in aktiv:
             lines.append(f"### {r.skill_id} *(experimentell)*")
-            if r.findings:
+            if r.error:
+                lines.append(f"*Fehler: {r.error.splitlines()[0] if r.error else '?'}*")
+            elif r.findings:
                 for f in r.findings:
                     lines.append(f"- **{f.title}**  ")
                     lines.append(f"  {f.detail}")

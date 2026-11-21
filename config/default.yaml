@@ -5,6 +5,7 @@
 # Kein Standardmodell hier – fehlendes Modell führt zu „nicht verfügbar"-Findings, kein Abbruch.
 # llm.experimentelle_skills_aktiv: false (Standard) – auf true setzen, um Skills mit
 #   status: experimental zu aktivieren. Erst aktivieren, wenn Eval-Kriterien erfüllt sind.
+# llm.timeout_sekunden: 120 (Standard) – Wartezeit für LLM-Anfragen in Sekunden; in lokal.yaml überschreiben.
 
 # Schwellenwerte für alle Prüfregeln – werden in ctx.config geladen (Phase 2).
 toleranz: 0.02       # Toleranzgrenze aller Rechenweg-Prüfungen in €

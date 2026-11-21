@@ -155,3 +155,50 @@ def test_pipeline_kollision_erzeugt_info_in_bericht(make_context: Any, tmp_path:
     assert result["gesamtstatus"] in ("ok", "info", "pruefen")
     md = Path(result["bericht_md_pfad"]).read_text(encoding="utf-8")
     assert "Prüfbericht" in md   # Bericht entstanden
+
+
+def test_experimentell_findings_erhoehen_hinweis_zaehler_nicht(
+    make_context: Any, tmp_path: Path
+) -> None:
+    """Hinweis-Zähler im Bericht ist mit und ohne experimentellen Skill identisch."""
+    import re as re_mod
+
+    store1 = _store()
+    ctx = make_context()
+    info_f = Finding(rule="k", severity="info", title="Klärung", detail="X")
+    exp_f = Finding(rule="re", severity="info", title="Rückfrage XYZ", detail="Y")
+    ordner_ohne = tmp_path / "ohne"
+    ordner_mit = tmp_path / "mit"
+    ordner_ohne.mkdir()
+    ordner_mit.mkdir()
+
+    with (
+        patch("fibu.graph.nodes.load_context", return_value=ctx),
+        patch("fibu.graph.nodes.run_skills",
+              return_value=[SkillResult(skill_id="k", findings=[info_f])]),
+    ):
+        result_ohne = run_pruefung(ordner_ohne, store=store1, _checkpointer=MemorySaver())
+
+    store2 = _store()
+    with (
+        patch("fibu.graph.nodes.load_context", return_value=ctx),
+        patch("fibu.graph.nodes.run_skills", return_value=[
+            SkillResult(skill_id="k", findings=[info_f]),
+            SkillResult(skill_id="re", findings=[exp_f], experimentell=True),
+        ]),
+    ):
+        result_mit = run_pruefung(ordner_mit, store=store2, _checkpointer=MemorySaver())
+
+    md_ohne = Path(result_ohne["bericht_md_pfad"]).read_text(encoding="utf-8")
+    md_mit = Path(result_mit["bericht_md_pfad"]).read_text(encoding="utf-8")
+
+    z_ohne = re_mod.search(r'Hinweise \((\d+)\)', md_ohne)
+    z_mit = re_mod.search(r'Hinweise \((\d+)\)', md_mit)
+    assert z_ohne is not None and z_mit is not None
+    assert z_ohne.group(1) == z_mit.group(1)
+
+    # Experimentelles Finding im KI-gestützt, nicht im Hinweise-Block
+    ki_idx = md_mit.find("🤖 KI-gestützt")
+    assert ki_idx >= 0
+    assert "Rückfrage XYZ" in md_mit[ki_idx:]
+    assert "Rückfrage XYZ" not in md_mit[:ki_idx]
