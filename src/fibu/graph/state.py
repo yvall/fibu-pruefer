@@ -28,4 +28,5 @@ class PruefState(_PruefStateBasis, total=False):
     bericht_md_pfad: str
     bericht_html_pfad: str
     entscheidung: Entscheidung   # nach warte_auf_freigabe (nur mit --mail)
+    versand_ok: bool             # True nach erfolgreichem Versand (oder Trockenlauf)
     fehler: str

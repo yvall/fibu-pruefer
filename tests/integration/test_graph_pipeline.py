@@ -127,8 +127,11 @@ def test_pipeline_resume_nach_interrupt(make_context: Any, tmp_path: Path) -> No
     assert "__interrupt__" in paused
     lauf_id = paused["lauf_id"]
 
+    from fibu.ingest.mail import NullMailSender
     entscheidung = Entscheidung(freigabe="freigegeben", kommentar="ok")
-    result = freigeben_lauf(lauf_id, entscheidung, store, _checkpointer=cp)
+    result = freigeben_lauf(
+        lauf_id, entscheidung, store, _checkpointer=cp, _mail_sender=NullMailSender()
+    )
 
     assert "entscheidung" in result
     assert result["entscheidung"].freigabe == "freigegeben"

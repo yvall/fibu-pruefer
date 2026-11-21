@@ -1,8 +1,5 @@
 from decimal import Decimal
 
-import pytest
-from pydantic import ValidationError
-
 from fibu.contracts import Auswertung, BelegRecord, Context, KlaerRow
 from fibu.contracts.context import ChangedKonto
 
@@ -76,14 +73,14 @@ def test_context_json_roundtrip():
             source="x.pdf",
             year=2024,
             month=8,
-            bwa={"Umsatz": (Decimal("1000"), Decimal("8000"))},
+            bwa={"Umsatz": (Decimal(1000), Decimal(8000))},
         ),
-        klaerung=[KlaerRow(text="Test", monat="08/2024", betrag=Decimal("100"))],
-        changed_accounts=[("4000", "Umsatz", Decimal("100"), Decimal("0"))],
+        klaerung=[KlaerRow(text="Test", monat="08/2024", betrag=Decimal(100))],
+        changed_accounts=[("4000", "Umsatz", Decimal(100), Decimal(0))],
     )
     json_str = ctx.model_dump_json()
     ctx2 = Context.model_validate_json(json_str)
-    assert ctx2.auswertung.bwa["Umsatz"] == (Decimal("1000"), Decimal("8000"))
-    assert ctx2.klaerung[0].betrag == Decimal("100")
+    assert ctx2.auswertung.bwa["Umsatz"] == (Decimal(1000), Decimal(8000))
+    assert ctx2.klaerung[0].betrag == Decimal(100)
     assert ctx2.changed_accounts[0][0] == "4000"
     assert isinstance(ctx2.changed_accounts[0][2], Decimal)

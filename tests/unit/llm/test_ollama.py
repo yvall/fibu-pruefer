@@ -6,8 +6,6 @@ from io import BytesIO
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from fibu.config import LlmConfig
 from fibu.llm.ollama import OllamaClient
 from fibu.llm.protocol import LlmClient

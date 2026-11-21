@@ -73,7 +73,7 @@ def test_from_legacy_page_texts() -> None:
 
 
 def test_from_legacy_ustva() -> None:
-    legacy = _make_legacy_a(ustva={"81": {"base": D("10000"), "tax": D("1900")}})
+    legacy = _make_legacy_a(ustva={"81": {"base": D(10000), "tax": D(1900)}})
     a = _from_legacy(legacy)
-    assert a.ustva["81"].base == D("10000")
-    assert a.ustva["81"].tax == D("1900")
+    assert a.ustva["81"].base == D(10000)
+    assert a.ustva["81"].tax == D(1900)

@@ -11,7 +11,6 @@ import pytest
 
 from fibu.config import LokaleConfig, _suche_config_datei
 
-
 # ---------------------------------------------------------------------------
 # _suche_config_datei – Einzel-Quellen
 # ---------------------------------------------------------------------------

@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS laeufe (
     ordner     TEXT NOT NULL,
     gestartet  TEXT NOT NULL,
     geschlossen TEXT,
-    status     TEXT NOT NULL DEFAULT 'laufend'
+    status     TEXT NOT NULL DEFAULT 'laufend',
+    versand_ok INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS kontext (
     lauf_id     TEXT PRIMARY KEY,
@@ -33,6 +34,11 @@ CREATE TABLE IF NOT EXISTS findings (
     findings_json TEXT NOT NULL
 );
 """
+
+# Rückwärtskompatible Migrationen für bestehende Datenbanken
+_MIGRATIONS = [
+    "ALTER TABLE laeufe ADD COLUMN versand_ok INTEGER NOT NULL DEFAULT 0",
+]
 
 
 def _jetzt() -> str:
@@ -70,6 +76,11 @@ class LaufStore:
             self._conn = sqlite3.connect(":memory:")
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        for migration in _MIGRATIONS:
+            try:
+                self._conn.execute(migration)
+            except sqlite3.OperationalError:
+                pass  # Spalte existiert bereits
         self._conn.commit()
 
     # ------------------------------------------------------------------
@@ -98,6 +109,18 @@ class LaufStore:
             (ordner,),
         ).fetchone()
         return _row_zu_laufinfo(row) if row else None
+
+    def setze_versand_ok(self, lauf_id: str) -> None:
+        self._conn.execute(
+            "UPDATE laeufe SET versand_ok = 1 WHERE lauf_id = ?", (lauf_id,)
+        )
+        self._conn.commit()
+
+    def ist_versand_ok(self, lauf_id: str) -> bool:
+        row = self._conn.execute(
+            "SELECT versand_ok FROM laeufe WHERE lauf_id = ?", (lauf_id,)
+        ).fetchone()
+        return bool(row["versand_ok"]) if row else False
 
     def alle_laeufe(self, ordner: str) -> list[LaufInfo]:
         rows = self._conn.execute(

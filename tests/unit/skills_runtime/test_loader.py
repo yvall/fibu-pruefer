@@ -1,9 +1,6 @@
 from pathlib import Path
 
-import pytest
-
-from fibu.skills_runtime.loader import SkillManifest, _parse_frontmatter, load_manifests
-
+from fibu.skills_runtime.loader import _parse_frontmatter, load_manifests
 
 SKILL_MD_FULL = """\
 ---
