@@ -1,13 +1,12 @@
 """Skill rueckfrage-entwurf: Rückfragen-Entwurf an den Steuerberater.
 
 Deterministischer Kern: Fasst fehler/pruefen-Befunde nach Regel als
-Markdown-Liste mit einmaliger Schlussbitte je Gruppe.
+saubere Markdown-Liste, Schlussbitte genau einmal am Ende.
 
-LLM-Formulierung: Ein Modellaufruf für alle Gruppen. Zuordnung per Regelname
-(nicht Position). Zahl-Kontrolle je Gruppe: keine Fremdzahlen, alle Pflicht-
-Angaben (Beträge €, Kontonummern, Anzahlen ×) müssen vorkommen, keine
-Zahlwörter. Bei Verstoß fällt nur die betroffene Gruppe auf den
-deterministischen Text zurück, mit Hinweis im Befund.
+LLM-Formulierung: Ein Modellaufruf für alle Gruppen. Zuordnung per Regelname.
+Zahl-Kontrolle je Gruppe nur auf Basis der im Prompt gezeigten Zahlen (f.title),
+nicht auf f.detail. Diagnose (Rückfallgrund je Gruppe) geht in _meta, nicht
+in den Befundtext. Versand-tauglicher Text: keine Diagnosetexte im Detail.
 """
 from __future__ import annotations
 
@@ -111,27 +110,32 @@ def _zahlen_norm_aus_text(text: str) -> frozenset[str]:
 
 
 def _extrahiere_zahlen_norm(findings: list[Finding]) -> frozenset[str]:
+    """Extrahiert Zahlen NUR aus f.title – dem Inhalt, der dem Modell gezeigt wird."""
     zahlen: set[str] = set()
     for f in findings:
-        for src in [f.title, f.detail]:
-            for m in _ZAHL_RE.finditer(src):
-                zahlen.add(_normalize_zahl(m.group(0)))
+        for m in _ZAHL_RE.finditer(f.title):
+            zahlen.add(_normalize_zahl(m.group(0)))
     return frozenset(zahlen)
 
 
 def _pflicht_zahlen_norm(findings: list[Finding]) -> frozenset[str]:
-    """Beträge (€), Kontonummern (≥3-stellig) und Anzahlen (N×) aus den Befunden."""
+    """Beträge (€), Kontonummern (≥3-stellig) und Anzahlen (N×) aus f.title.
+
+    Nur Zahlen aus dem Titel, da der Prompt nur f.title zeigt. Zahlen aus
+    f.detail bleiben unsichtbar für das Modell und werden weder verlangt
+    noch als Fremdzahlen gewertet.
+    """
     zahlen: set[str] = set()
     for f in findings:
-        for src in [f.title, f.detail]:
-            for m in _BETRAG_RE.finditer(src):
-                zahlen.add(_normalize_zahl(m.group(1)))
-            for m in _KONTO_RE.finditer(src):
-                zahlen.add(m.group(1))
-            for m in _ANZAHL_RE.finditer(src):
-                zahlen.add(m.group(1))
-            for m in _ANZAHL2_RE.finditer(src):
-                zahlen.add(m.group(1))
+        src = f.title
+        for m in _BETRAG_RE.finditer(src):
+            zahlen.add(_normalize_zahl(m.group(1)))
+        for m in _KONTO_RE.finditer(src):
+            zahlen.add(m.group(1))
+        for m in _ANZAHL_RE.finditer(src):
+            zahlen.add(m.group(1))
+        for m in _ANZAHL2_RE.finditer(src):
+            zahlen.add(m.group(1))
     return frozenset(zahlen)
 
 
@@ -183,31 +187,24 @@ def _pruefe_gruppe(
 # Deterministischer Kern
 # ---------------------------------------------------------------------------
 
-def _entwurf_deterministisch_gruppe(
-    rule: str,
-    gruppe: list[Finding],
-    *,
-    hinweis: str = "",
-) -> Finding:
-    """Deterministisches Finding für eine einzelne Gruppe."""
+def _entwurf_deterministisch_gruppe(rule: str, gruppe: list[Finding]) -> Finding:
+    """Deterministisches Finding für eine einzelne Gruppe – saubere Markdown-Liste.
+
+    Kein „Zu <regel>:"-Präfix, Schlussbitte einmal am Ende.
+    Keine Diagnosetexte; die gehen ausschließlich in _meta.
+    """
     n = len(gruppe)
-    zeilen = [f"- Zu {rule}: {f.title}" for f in gruppe]
-    teile = ["\n".join(zeilen), "Bitte prüfen und den Sachverhalt mitteilen."]
-    if hinweis:
-        teile.append(f"({hinweis})")
+    zeilen = [f"- {f.title}" for f in gruppe]
+    detail = "\n".join(zeilen) + "\n\nBitte prüfen und den Sachverhalt mitteilen."
     return Finding(
         rule=SKILL_ID,
         severity="info",
         title=f"Rückfrage: {rule} ({n} Befund{'e' if n != 1 else ''})",
-        detail="\n".join(teile),
+        detail=detail,
     )
 
 
-def _entwurf_deterministisch(
-    findings: list[Finding],
-    *,
-    hinweis: str = "",
-) -> list[Finding]:
+def _entwurf_deterministisch(findings: list[Finding]) -> list[Finding]:
     """Erzeugt pro Skill-Gruppe ein info-Finding als Markdown-Liste."""
     relevant = [
         f for f in findings
@@ -221,7 +218,7 @@ def _entwurf_deterministisch(
         gruppen.setdefault(f.rule, []).append(f)
 
     return [
-        _entwurf_deterministisch_gruppe(rule, gruppe, hinweis=hinweis)
+        _entwurf_deterministisch_gruppe(rule, gruppe)
         for rule, gruppe in gruppen.items()
     ]
 
@@ -271,11 +268,19 @@ def _parse_llm_antwort(roh: str) -> _LlmAntwort | None:
 
 
 # ---------------------------------------------------------------------------
-# Skill-Einstiegspunkt
+# Skill-Einstiegspunkt + Meta-Tracking
 # ---------------------------------------------------------------------------
+
+# Rückfalldiagnose je Gruppe: von run() gesetzt, von der Runtime über _meta abgerufen.
+# Enthält: rueckfall_gruppen {rule: grund}, gruppen_gesamt, llm_gruppen.
+_meta: dict[str, Any] = {}
+
 
 def run(ctx: Context, llm: LlmClient) -> list[Finding]:
     """Erzeugt einen Rückfragen-Entwurf aus den Befunden der Vorgängerskills."""
+    global _meta
+    _meta = {}
+
     from fibu.llm.null import NullLlmClient
 
     if isinstance(llm, NullLlmClient):
@@ -299,35 +304,51 @@ def run(ctx: Context, llm: LlmClient) -> list[Finding]:
     roh = llm.generiere(prompt, json_schema=_JSON_SCHEMA, modell=modell)
 
     if roh is None:
-        log.debug("rueckfrage-entwurf: kein LLM-Response – deterministischer Fallback")
+        log.debug("rueckfrage-entwurf: kein LLM-Response – globaler Fallback")
+        _meta = {
+            "rueckfall_gruppen": {r: "kein LLM-Response" for r in gruppen_dict},
+            "gruppen_gesamt": len(gruppen_dict),
+            "llm_gruppen": 0,
+        }
         return _entwurf_deterministisch(ctx.befunde)
 
     antwort = _parse_llm_antwort(roh)
     if antwort is None:
-        log.debug("rueckfrage-entwurf: Parse-Fehler – deterministischer Fallback")
+        log.debug("rueckfrage-entwurf: Parse-Fehler – globaler Fallback")
+        _meta = {
+            "rueckfall_gruppen": {r: "Parse-Fehler" for r in gruppen_dict},
+            "gruppen_gesamt": len(gruppen_dict),
+            "llm_gruppen": 0,
+        }
         return _entwurf_deterministisch(ctx.befunde)
 
-    # Zuordnung per Regelname (nicht Position); erste Nennung gewinnt bei Duplikaten
+    # Zuordnung per Regelname; erste Nennung gewinnt bei Duplikaten
     llm_map: dict[str, _Gruppe] = {}
     for g in antwort.gruppen:
         thema = g.thema.strip()
         if thema not in llm_map:
             llm_map[thema] = g
 
+    rueckfall_gruppen: dict[str, str] = {}
+    llm_gruppen = 0
     result: list[Finding] = []
+
     for rule, gruppe in gruppen_dict.items():
         llm_gruppe = llm_map.get(rule)
         if llm_gruppe is None:
-            log.debug("rueckfrage-entwurf: Gruppe %s fehlt in LLM-Antwort – Fallback", rule)
+            log.debug("rueckfrage-entwurf: Gruppe %s fehlt – Fallback", rule)
+            rueckfall_gruppen[rule] = "Gruppe fehlt in LLM-Antwort"
             result.append(_entwurf_deterministisch_gruppe(rule, gruppe))
             continue
 
-        ok, hinweis = _pruefe_gruppe(llm_gruppe.text, gruppe, ctx.auswertung)
+        ok, grund = _pruefe_gruppe(llm_gruppe.text, gruppe, ctx.auswertung)
         if not ok:
-            log.debug("rueckfrage-entwurf: Gruppe %s: %s – Fallback", rule, hinweis)
-            result.append(_entwurf_deterministisch_gruppe(rule, gruppe, hinweis=hinweis))
+            log.debug("rueckfrage-entwurf: Gruppe %s: %s – Fallback", rule, grund)
+            rueckfall_gruppen[rule] = grund
+            result.append(_entwurf_deterministisch_gruppe(rule, gruppe))
             continue
 
+        llm_gruppen += 1
         n = len(gruppe)
         result.append(Finding(
             rule=SKILL_ID,
@@ -335,5 +356,11 @@ def run(ctx: Context, llm: LlmClient) -> list[Finding]:
             title=f"Rückfrage: {llm_gruppe.thema} ({n} Befund{'e' if n != 1 else ''})",
             detail=llm_gruppe.text,
         ))
+
+    _meta = {
+        "rueckfall_gruppen": rueckfall_gruppen,
+        "gruppen_gesamt": len(gruppen_dict),
+        "llm_gruppen": llm_gruppen,
+    }
 
     return result

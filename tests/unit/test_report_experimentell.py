@@ -184,3 +184,52 @@ def test_exp_skill_mit_fehler_in_ki_gestuetzt() -> None:
     assert "Laufzeitfehler" in md[ki_idx:]
     # Nicht im ⚠️ Skill-Fehler-Abschnitt (falls vorhanden, wäre es vor KI-gestützt)
     assert "Laufzeitfehler" not in md[:ki_idx]
+
+
+# ---------------------------------------------------------------------------
+# Neue Rendering-Eigenschaften (3e-3b)
+# ---------------------------------------------------------------------------
+
+def test_det_fallback_html_als_liste() -> None:
+    """Deterministischer Fallbacktext rendert im HTML als <li>-Liste."""
+    from fibu.report import to_html
+    exp_f = Finding(
+        rule="rueckfrage-entwurf", severity="info",
+        title="Rückfrage: bwa-rechenwege (2 Befunde)",
+        detail="- Titel A\n- Titel B\n\nBitte prüfen und den Sachverhalt mitteilen.",
+    )
+    r = _result("rueckfrage-entwurf", findings=[exp_f], experimentell=True)
+    html = to_html(_auswertung(), [r])
+    assert "<li>Titel A</li>" in html
+    assert "<li>Titel B</li>" in html
+
+
+def test_llm_zusammenfassung_im_bericht() -> None:
+    """KI-gestützt zeigt Formulierungs-Zusammenfassung aus meta."""
+    from fibu.skills_runtime.runner import SkillResult
+    exp_f = Finding(rule="re", severity="info", title="Rückfrage: xyz (2 Befunde)", detail="text")
+    r = SkillResult(
+        skill_id="re",
+        findings=[exp_f],
+        experimentell=True,
+        meta={
+            "rueckfall_gruppen": {"xyz2": "Pflichtzahl fehlt"},
+            "gruppen_gesamt": 2,
+            "llm_gruppen": 1,
+        },
+    )
+    md = to_markdown(_auswertung(), [r])
+    assert "Formulierung durch Modell" in md
+    assert "1 von 2 Gruppen" in md
+
+
+def test_kein_zu_prefix_in_det_fallback_bericht() -> None:
+    """Deterministischer Fallback im Bericht hat kein 'Zu <regel>:' Präfix."""
+    exp_f = Finding(
+        rule="rueckfrage-entwurf", severity="info",
+        title="Rückfrage: bwa-rechenwege (1 Befund)",
+        detail="- Differenz 1.234,56 €\n\nBitte prüfen und den Sachverhalt mitteilen.",
+    )
+    r = _result("rueckfrage-entwurf", findings=[exp_f], experimentell=True)
+    md = to_markdown(_auswertung(), [r])
+    assert "Zu bwa-rechenwege:" not in md

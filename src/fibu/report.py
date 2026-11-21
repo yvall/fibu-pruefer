@@ -245,8 +245,20 @@ def to_markdown(a: Auswertung, results: list[SkillResult]) -> str:
                 lines.append(f"*Fehler: {r.error.splitlines()[0] if r.error else '?'}*")
             elif r.findings:
                 for f in r.findings:
-                    lines.append(f"- **{f.title}**  ")
-                    lines.append(f"  {f.detail}")
+                    lines.append(f"**{f.title}**")
+                    lines.append("")
+                    for dl in f.detail.splitlines():
+                        lines.append(dl)
+                    lines.append("")
+                # LLM-Zusammenfassung aus meta (falls Skill LLM-Aufruf dokumentiert hat)
+                if "rueckfall_gruppen" in r.meta:
+                    n_ges = r.meta.get("gruppen_gesamt", 0)
+                    n_llm = r.meta.get("llm_gruppen", 0)
+                    lines.append(
+                        f"*Formulierung durch Modell: {n_llm} von {n_ges} Gruppen;"
+                        " Rest als Standardtext*"
+                    )
+                    lines.append("")
             else:
                 lines.append("*Keine Befunde.*")
             lines.append("")

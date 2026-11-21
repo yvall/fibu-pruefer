@@ -306,3 +306,52 @@ Dateien:
   `experimentelle_skills_aktiv=True` + NullLlmClient → `*(experimentell)*` im Bericht
 
 Commit: `Skill rueckfrage-entwurf: Graph-Integrationstest`
+
+---
+
+## Ergebnis 3e-3 (Echtlauf August 2026, Mistral)
+
+### Vor der Korrektur (3e-3 original, Commit d8bd2f8)
+
+| Gruppe | LLM oder Rückfall | Grund |
+|---|---|---|
+| belege-abgleich | LLM ✓ | — |
+| durchlaufende-posten | Rückfall | Pflichtzahl fehlt: 19.00 |
+| kosten-deckung | Rückfall | Pflichtzahl fehlt: 2459.67 |
+| opos-pruefung | Rückfall | Pflichtzahl fehlt: 26275.20 |
+| saldenrichtung | Rückfall | Pflichtzahl fehlt: 2.00 |
+| umsatz-beweis | LLM ✓ | — |
+| ustva-abgleich | Rückfall | Pflichtzahl fehlt: 19134.96 |
+| vormonat-fortschreibung | Rückfall | Pflichtzahl fehlt: 4.39 |
+
+**2 von 8 Gruppen LLM-formuliert; 6 Rückfälle.**
+
+### Ursache
+
+`_pflicht_zahlen_norm()` und `_extrahiere_zahlen_norm()` lasen Zahlen aus
+`f.title` **und** `f.detail`. Der Prompt (`_baue_prompt`) zeigt dem Modell
+aber ausschließlich `f.title`. Zahlen wie 2459.67, 26275.20, 19134.96 usw.
+standen im Detail der Befunde (z. B. „Gebuchte Kosten: 2.459,67 €"), waren
+dem Modell also unbekannt – es konnte sie weder nennen noch hätte es sie
+erfinden dürfen. Die Vollständigkeitsprüfung schlug daher für sechs Gruppen an.
+
+### Regel nach Korrektur (3e-3b, Commit folgt)
+
+> **Pflichtzahlen = gezeigte Zahlen**: Sowohl die Erlaubnis-Prüfung (keine
+> Fremdzahlen) als auch die Vollständigkeitsprüfung (Pflicht-Angaben müssen
+> vorkommen) basieren ausschließlich auf den Zahlen aus `f.title` – dem
+> Inhalt, der dem Modell tatsächlich gezeigt wird. Zahlen aus `f.detail`
+> bleiben für das Modell unsichtbar und werden weder verlangt noch als
+> Fremdzahlen gewertet.
+
+Zusätzlich: Diagnosetexte (Rückfallgrund je Gruppe) gehen in `SkillResult.meta`
+(`rueckfall_gruppen`), nicht in den Befundtext. Der Bericht zeigt eine
+einzeilige Zusammenfassung im KI-gestützt-Abschnitt.
+
+### Nach der Korrektur (3e-3b, Commit 408a6d9)
+
+**8 von 8 Gruppen LLM-formuliert; 0 Rückfälle.** Mistral formuliert alle
+Gruppen als sachlichen Fließtext, enthält alle Pflicht-Angaben (Beträge,
+Kontonummern, Anzahlen) aus den Titeln und verwendet keine Zahlwörter.
+Zusammenfassung im Bericht: „Formulierung durch Modell: 8 von 8 Gruppen;
+Rest als Standardtext".
