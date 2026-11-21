@@ -49,8 +49,12 @@ def _dedupliziere_finding_ids(
                 f = f.model_copy(update={"id_suffix": f"#{n}"})
             neue_findings.append(f)
         neue_results.append(
-            SkillResult(skill_id=result.skill_id, findings=neue_findings,
-                        meta=result.meta, error=result.error)
+            SkillResult(
+                skill_id=result.skill_id, findings=neue_findings,
+                meta=result.meta, error=result.error,
+                experimentell=result.experimentell,
+                deaktiviert=result.deaktiviert,
+            )
         )
 
     info_findings: list[Finding] = []
