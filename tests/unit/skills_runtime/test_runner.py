@@ -101,6 +101,89 @@ def test_run_skills_respects_order(tmp_path: Path) -> None:
     assert all(r.error is None for r in results)
 
 
+def test_run_skills_context_befunde_wird_befuellt(tmp_path: Path) -> None:
+    """Ein Skill mit context.befunde in inputs erhält ctx.befunde aus Vorgänger-Findings."""
+    from fibu.skills_runtime import run_skills
+
+    # Normaler Skill erzeugt ein Finding
+    d_a = tmp_path / "skill-a"
+    d_a.mkdir()
+    (d_a / "SKILL.md").write_text("---\nname: skill-a\n---\n")
+    (d_a / "check.py").write_text(
+        "from fibu.contracts import Finding\n"
+        "def run(ctx):\n"
+        "    return [Finding(rule='skill-a', severity='pruefen', title='Auffällig', detail='')]\n"
+    )
+
+    # Befunde-Skill liest ctx.befunde
+    d_b = tmp_path / "befunde-skill"
+    d_b.mkdir()
+    (d_b / "SKILL.md").write_text("---\nname: befunde-skill\ninputs:\n  - context.befunde\n---\n")
+    (d_b / "check.py").write_text(
+        "from fibu.contracts import Finding\n"
+        "_meta = {}\n"
+        "def run(ctx):\n"
+        "    _meta['anzahl_befunde'] = len(ctx.befunde)\n"
+        "    return [Finding(rule='befunde-skill', severity='info', title='Befunde gelesen', detail='')]\n"
+    )
+
+    results = run_skills(_ctx(), tmp_path)
+    assert len(results) == 2
+    befunde_r = next(r for r in results if r.skill_id == "befunde-skill")
+    assert befunde_r.error is None
+    assert befunde_r.meta.get("anzahl_befunde") == 1
+
+
+def test_run_skills_befunde_skill_laeuft_nach_normalen(tmp_path: Path) -> None:
+    """Befunde-Skill läuft immer nach normalen Skills, auch ohne runs_after."""
+    from fibu.skills_runtime import run_skills
+
+    # Normaler Skill (kein context.befunde)
+    d_n = tmp_path / "normal-skill"
+    d_n.mkdir()
+    (d_n / "SKILL.md").write_text("---\nname: normal-skill\n---\n")
+    (d_n / "check.py").write_text(
+        "from fibu.contracts import Finding\n"
+        "def run(ctx):\n"
+        "    return [Finding(rule='normal-skill', severity='info', title='Normal', detail='')]\n"
+    )
+
+    # Befunde-Skill: ctx.befunde muss schon den normalen Skill enthalten
+    d_b = tmp_path / "befunde-skill"
+    d_b.mkdir()
+    (d_b / "SKILL.md").write_text("---\nname: befunde-skill\ninputs:\n  - context.befunde\n---\n")
+    (d_b / "check.py").write_text(
+        "from fibu.contracts import Finding\n"
+        "_meta = {}\n"
+        "def run(ctx):\n"
+        "    regeln = [f.rule for f in ctx.befunde]\n"
+        "    _meta['vorgaenger'] = regeln\n"
+        "    return []\n"
+    )
+
+    results = run_skills(_ctx(), tmp_path)
+    befunde_r = next(r for r in results if r.skill_id == "befunde-skill")
+    assert "normal-skill" in befunde_r.meta.get("vorgaenger", [])
+
+
+def test_run_skills_ohne_befunde_skills_unveraendert(tmp_path: Path) -> None:
+    """Keine Befunde-Skills → Verhalten wie bisher, ctx.befunde bleibt leer."""
+    from fibu.skills_runtime import run_skills
+
+    d = tmp_path / "sk"
+    d.mkdir()
+    (d / "SKILL.md").write_text("---\nname: sk\n---\n")
+    (d / "check.py").write_text(
+        "from fibu.contracts import Finding\n"
+        "def run(ctx):\n"
+        "    return [Finding(rule='sk', severity='info', title='OK', detail='')]\n"
+    )
+    ctx = _ctx()
+    results = run_skills(ctx, tmp_path)
+    assert len(results) == 1
+    assert ctx.befunde == []  # unverändert, da kein Befunde-Skill
+
+
 def test_run_skills_error_does_not_abort(tmp_path: Path) -> None:
     """Ein crashender Skill stoppt nicht die anderen."""
     from fibu.skills_runtime import run_skills

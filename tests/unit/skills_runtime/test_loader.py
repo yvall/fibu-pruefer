@@ -136,3 +136,39 @@ def test_load_manifests_status_stable_explicit(tmp_path: Path) -> None:
 def test_parse_frontmatter_status() -> None:
     fm = _parse_frontmatter("---\nstatus: experimental\nllm: true\n---\n")
     assert fm["status"] == "experimental"
+
+
+def test_load_manifests_llm_true_braucht_llm(tmp_path: Path) -> None:
+    d = tmp_path / "s"
+    d.mkdir()
+    (d / "SKILL.md").write_text("---\nllm: true\n---\n")
+    m = load_manifests(tmp_path)[0]
+    assert m.braucht_llm is True
+    assert m.llm_optional is False
+
+
+def test_load_manifests_llm_optional(tmp_path: Path) -> None:
+    d = tmp_path / "s"
+    d.mkdir()
+    (d / "SKILL.md").write_text("---\nllm: optional\n---\n")
+    m = load_manifests(tmp_path)[0]
+    assert m.braucht_llm is False
+    assert m.llm_optional is True
+
+
+def test_load_manifests_llm_false_kein_llm(tmp_path: Path) -> None:
+    d = tmp_path / "s"
+    d.mkdir()
+    (d / "SKILL.md").write_text("---\nllm: false\n---\n")
+    m = load_manifests(tmp_path)[0]
+    assert m.braucht_llm is False
+    assert m.llm_optional is False
+
+
+def test_load_manifests_llm_absent_kein_llm(tmp_path: Path) -> None:
+    d = tmp_path / "s"
+    d.mkdir()
+    (d / "SKILL.md").write_text("---\nname: ohne-llm\n---\n")
+    m = load_manifests(tmp_path)[0]
+    assert m.braucht_llm is False
+    assert m.llm_optional is False

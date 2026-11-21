@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from fibu.contracts import Auswertung, BelegRecord, Context, KlaerRow
+from fibu.contracts import Auswertung, BelegRecord, Context, Finding, KlaerRow
 from fibu.contracts.context import ChangedKonto
 
 
@@ -84,3 +84,24 @@ def test_context_json_roundtrip():
     assert ctx2.klaerung[0].betrag == Decimal(100)
     assert ctx2.changed_accounts[0][0] == "4000"
     assert isinstance(ctx2.changed_accounts[0][2], Decimal)
+
+
+def test_context_befunde_default_leer():
+    ctx = Context(auswertung=_auswertung())
+    assert ctx.befunde == []
+
+
+def test_context_befunde_mit_wert():
+    f = Finding(rule="test", severity="info", title="OK", detail="")
+    ctx = Context(auswertung=_auswertung(), befunde=[f])
+    assert len(ctx.befunde) == 1
+    assert ctx.befunde[0].rule == "test"
+
+
+def test_context_befunde_json_roundtrip():
+    f = Finding(rule="bwa-rechenwege", severity="fehler", title="Diff", detail="Erklärung")
+    ctx = Context(auswertung=_auswertung(), befunde=[f])
+    ctx2 = Context.model_validate_json(ctx.model_dump_json())
+    assert len(ctx2.befunde) == 1
+    assert ctx2.befunde[0].rule == "bwa-rechenwege"
+    assert ctx2.befunde[0].severity == "fehler"

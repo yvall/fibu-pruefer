@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from .auswertung import Auswertung
 from .beleg import BelegRecord
+from .finding import Finding
 
 # (kontonr, name, Δsoll, Δhaben) – Ergebnis von vormonat-fortschreibung
 ChangedKonto = tuple[str, str, Decimal, Decimal]
@@ -25,4 +26,6 @@ class Context(BaseModel):
     klaerung: list[KlaerRow] = Field(default_factory=list)
     # Befüllt durch die Runtime nach Ausführung von vormonat-fortschreibung
     changed_accounts: list[tuple[str, str, Decimal, Decimal]] = Field(default_factory=list)
+    # Befüllt durch run_skills() vor Ausführung von Skills mit inputs: [context.befunde]
+    befunde: list[Finding] = Field(default_factory=list)
     config: dict[str, object] = Field(default_factory=dict)

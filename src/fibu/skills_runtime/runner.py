@@ -89,8 +89,8 @@ def run_one_skill(
         loader.exec_module(mod)
         run_fn = mod.run
 
-        # E6: Dispatch ausschließlich per braucht_llm-Frontmatter-Flag (nicht per Signatur)
-        if manifest.braucht_llm:
+        # E6: Dispatch per Frontmatter-Flag; llm_optional = NullLlmClient erlaubt
+        if manifest.braucht_llm or manifest.llm_optional:
             findings: list[Finding] = run_fn(ctx, effective_llm)
         else:
             findings = run_fn(ctx)

@@ -1,7 +1,8 @@
 # Plan Schritt 3e – Skill `rueckfrage-entwurf`
 
 **Stand:** 2026-11-21  
-**Ausgangspunkt:** Phase 3c abgeschlossen (`beleg-extraktion`). 330 Tests grün.
+**Ausgangspunkt:** Phase 3c abgeschlossen (`beleg-extraktion`). 330 Tests grün.  
+**Zielzahl nach Schritt 3e gesamt:** ≥ 440 Tests grün.
 
 ---
 
@@ -34,6 +35,41 @@ Standardtext, kein Laufabbruch.
 Pro Themengruppe ein `Finding(severity="info", rule="rueckfrage-entwurf")`, dessen
 `detail` den Entwurfstext enthält. Die Ergebnisaussage und der Exit-Code des Laufs
 bleiben unverändert; der Skill erzeugt ausschließlich `severity="info"`-Findings.
+
+---
+
+## 1a. Reihenfolge: Runtime erzwingt Nachrang von `context.befunde`-Skills
+
+Skills, die `context.befunde` in ihrer `inputs`-Liste haben, laufen zwingend nach
+**allen anderen Skills** – unabhängig von ihrer `runs_after`-Liste.
+Die Runtime trennt beim Start die Manifeste in zwei Gruppen:
+
+```
+normale_skills    →  topological_waves()  →  Wellen 1…n
+befunde_skills    →  topological_waves()  →  Wellen B1…Bm
+```
+
+Nach Abschluss aller normalen Wellen befüllt `run_skills()` `ctx.befunde` aus den
+bis dahin gesammelten Findings. Erst dann laufen die Befunde-Wellen.
+
+Die `runs_after`-Liste in SKILL.md dient für `context.befunde`-Skills nur als
+Dokumentation; die Runtime vertraut nicht auf ihre Vollständigkeit.
+
+---
+
+## 1b. Frontmatter `llm: optional`
+
+Das `llm`-Frontmatter kennt drei Werte:
+
+| Wert | `SkillManifest.braucht_llm` | `SkillManifest.llm_optional` | Verhalten bei NullLlmClient |
+|---|---|---|---|
+| `false` (Standard) | `False` | `False` | `run(ctx)` – kein LLM-Argument |
+| `true` | `True` | `False` | Früher Abbruch: `Finding(severity="info", title="LLM nicht konfiguriert")` |
+| `optional` | `False` | `True` | `run(ctx, llm)` mit NullLlmClient – kein Abbruch; Skill liefert deterministischen Fallback |
+
+`rueckfrage-entwurf` verwendet `llm: optional`, da er ohne Modell einen vollwertigen
+deterministischen Entwurf liefern kann. Bestehende LLM-Skills (`beleg-extraktion` etc.)
+behalten `llm: true`.
 
 ---
 
@@ -79,9 +115,14 @@ davon und kann auch ohne sie sinnvoll arbeiten.
    Felder `title`, `detail` und `calc` und baut ein Dict
    `{ "betrag_1": "1.234,56 €", "konto_1": "1370", ... }`.
 2. Der Prompt enthält nur diese benannten Platzhalter, keine Rohbeträge als Freitext.
-3. Nach Rückgabe prüft `_pruefe_zahlen_konsistenz(text: str, quellzahlen: set[str]) -> bool`
-   per Regex `r"\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?"` alle Ziffernfolgen im Text gegen
-   `quellzahlen`. Eine Zahl, die nicht in den Quellen vorkommt → Rückfall.
+3. Nach Rückgabe prüft `_pruefe_zahlen_konsistenz(text, quellzahlen, auswertung) -> bool`:
+   - Extrahiert per Regex `r"\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?"` alle Ziffernfolgen.
+   - **Normalisierung** beider Seiten: Tausenderpunkte entfernen, Dezimalkomma → Punkt
+     (`"1.234,56"` → `"1234.56"`, `"1.234"` → `"1234"`, `"12,5"` → `"12.5"`).
+   - **Immer erlaubt**: `str(auswertung.year)` (z. B. `"2024"`),
+     `str(auswertung.month)` und `f"{auswertung.month:02d}"` (z. B. `"8"`, `"08"`).
+   - Eine normalisierte Text-Zahl, die nicht in der normalisierten Quellmenge
+     und nicht in den Jahres-/Monatszahlen vorkommt → Rückfall.
 4. Ergibt der Rückfall, dass der deterministische Text die Anforderungen erfüllt,
    wird er stillschweigend verwendet; ein `Finding(severity="info", title="Zahl-Kontrolle")`
    informiert im Debug-Log, kein separater Bericht-Eintrag.
@@ -187,7 +228,7 @@ def test_experimentell_label_im_bericht(tmp_path, make_context):
 | Pydantic-Validierungsfehler (ungültiges JSON) | Fallback | deterministischer Text, kein Crash |
 | Deterministische Funktion: 3 Themengruppen → 3 Findings | Unit | Korrekte Gruppierung |
 
-Mindestanzahl neue Tests: ≥ 12. Erwartete Gesamtzahl: ≥ 342.
+Mindestanzahl neue Tests über alle Teilschritte: ≥ 110. Erwartete Gesamtzahl nach 3e: ≥ 440.
 
 ---
 
@@ -234,7 +275,7 @@ Commit: `Kontext um Befunde-Feld erweitern für Rückfrage-Skill`
 ### Schritt 3e-2 – Deterministischer Kern (`check.py` ohne LLM)
 
 Dateien:
-- `skills/rueckfrage-entwurf/SKILL.md` (Frontmatter: `status: experimental`, `llm: true`,
+- `skills/rueckfrage-entwurf/SKILL.md` (Frontmatter: `status: experimental`, `llm: optional`,
   `runs_after: [klaerungsliste, ...]`, `inputs: [context.befunde, auswertung.periode]`)
 - `skills/rueckfrage-entwurf/check.py`: `_entwurf_deterministisch()`, `run()` mit
   NullLlmClient-Fallback

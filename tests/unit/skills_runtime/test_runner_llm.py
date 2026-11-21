@@ -21,11 +21,12 @@ def _manifest(
     check_path: Path,
     skill_id: str = "test-skill",
     braucht_llm: bool = False,
+    llm_optional: bool = False,
     status: str = "stable",
 ) -> SkillManifest:
     return SkillManifest(
         skill_id=skill_id, check_path=check_path,
-        braucht_llm=braucht_llm, status=status,
+        braucht_llm=braucht_llm, llm_optional=llm_optional, status=status,
     )
 
 
@@ -321,6 +322,77 @@ def test_stable_skill_nicht_als_experimentell_markiert(tmp_path: Path) -> None:
     result = run_one_skill(_manifest(check_py, "normal"), _ctx())
     assert result.experimentell is False
     assert result.deaktiviert is False
+
+
+# ---------------------------------------------------------------------------
+# llm: optional – NullLlmClient wird durchgereicht, kein Abbruch
+# ---------------------------------------------------------------------------
+
+def test_llm_optional_null_client_kein_abbruch(tmp_path: Path) -> None:
+    """llm_optional=True + NullLlmClient → kein 'LLM nicht konfiguriert'-Finding."""
+    check_py = tmp_path / "check.py"
+    check_py.write_text(
+        "from fibu.contracts import Finding\n"
+        "def run(ctx, llm): return [Finding(rule='t', severity='info', title='Optional-OK', detail='')]\n"
+    )
+    result = run_one_skill(_manifest(check_py, llm_optional=True), _ctx(), NullLlmClient())
+    assert result.error is None
+    assert result.findings[0].title == "Optional-OK"
+
+
+def test_llm_optional_null_client_erhaelt_null_client(tmp_path: Path) -> None:
+    """llm_optional + NullLlmClient → check.py erhält NullLlmClient-Instanz."""
+    check_py = tmp_path / "check.py"
+    check_py.write_text(
+        "from fibu.contracts import Finding\n"
+        "from fibu.llm import NullLlmClient\n"
+        "_meta = {}\n"
+        "def run(ctx, llm):\n"
+        "    _meta['ist_null'] = isinstance(llm, NullLlmClient)\n"
+        "    return []\n"
+    )
+    result = run_one_skill(_manifest(check_py, llm_optional=True), _ctx(), NullLlmClient())
+    assert result.error is None
+    assert result.meta.get("ist_null") is True
+
+
+def test_llm_optional_mit_echtem_client(tmp_path: Path) -> None:
+    """llm_optional + echter LLM-Client → läuft normal durch."""
+    check_py = tmp_path / "check.py"
+    check_py.write_text(
+        "from fibu.contracts import Finding\n"
+        "def run(ctx, llm):\n"
+        "    return [Finding(rule='t', severity='info', title=llm.modell, detail='')]\n"
+    )
+    result = run_one_skill(_manifest(check_py, llm_optional=True), _ctx(), _MockLlmClient())
+    assert result.error is None
+    assert result.findings[0].title == "mock"
+
+
+def test_llm_true_null_client_abbruch_unveraendert(tmp_path: Path) -> None:
+    """braucht_llm=True + NullLlmClient → weiterhin früher Abbruch."""
+    check_py = tmp_path / "check.py"
+    check_py.write_text("raise AssertionError('Darf nicht laufen')\n")
+    result = run_one_skill(_manifest(check_py, braucht_llm=True), _ctx(), NullLlmClient())
+    assert result.findings[0].title == "LLM nicht konfiguriert"
+    assert result.error is None
+
+
+def test_run_skills_llm_optional_mit_null_client(tmp_path: Path) -> None:
+    """run_skills() mit llm: optional + NullLlmClient → kein Fallback-Finding."""
+    from fibu.skills_runtime import run_skills
+
+    d = tmp_path / "opt-skill"
+    d.mkdir()
+    (d / "SKILL.md").write_text("---\nname: opt-skill\nllm: optional\n---\n")
+    (d / "check.py").write_text(
+        "from fibu.contracts import Finding\n"
+        "def run(ctx, llm):\n"
+        "    return [Finding(rule='opt-skill', severity='info', title='Deterministisch', detail='')]\n"
+    )
+    results = run_skills(_ctx(), tmp_path, llm=NullLlmClient())
+    assert len(results) == 1
+    assert results[0].findings[0].title == "Deterministisch"
 
 
 def test_run_skills_experimentell_deaktiviert_per_default(tmp_path: Path) -> None:

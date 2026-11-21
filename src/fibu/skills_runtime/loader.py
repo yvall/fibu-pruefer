@@ -18,7 +18,8 @@ class SkillManifest:
     severity_default: str = "fehler"
     inputs: list[str] = field(default_factory=list)
     check_path: Path = field(default_factory=Path)
-    braucht_llm: bool = False
+    braucht_llm: bool = False    # llm: true  → Abbruch ohne LLM
+    llm_optional: bool = False   # llm: optional → NullLlmClient wird durchgereicht
     status: str = "stable"   # "stable" | "experimental"
 
 
@@ -52,7 +53,8 @@ def load_manifests(skills_dir: Path) -> list[SkillManifest]:
                 severity_default=str(fm.get("severity_default") or "fehler"),
                 inputs=[str(x) for x in (fm.get("inputs") or [])],
                 check_path=skill_md.parent / "check.py",
-                braucht_llm=bool(fm.get("llm")),
+                braucht_llm=str(fm.get("llm") or "false").lower() == "true",
+                llm_optional=str(fm.get("llm") or "false").lower() == "optional",
                 status=str(fm.get("status") or "stable"),
             )
         )
