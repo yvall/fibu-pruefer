@@ -18,3 +18,7 @@ echt/
 eval/
 vorlage_*.json
 eval_vorlage.json
+
+# Datenbanken und Sicherungskopien
+*.db
+*.bak
