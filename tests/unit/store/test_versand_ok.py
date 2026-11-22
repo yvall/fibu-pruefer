@@ -3,6 +3,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from fibu.store import LaufStore
 
 
@@ -79,3 +81,15 @@ def test_migration_auf_bestehender_db(tmp_path: Path) -> None:
     assert store.ist_versand_ok("alt-id") is False
     store.setze_versand_ok("alt-id")
     assert store.ist_versand_ok("alt-id") is True
+
+
+def test_migration_anderer_operational_error_wird_weitergegeben(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nur 'duplicate column name' wird ignoriert; andere OperationalErrors propagieren."""
+    import fibu.store.sqlite as sqlite_mod
+
+    # Migration auf nicht-existente Tabelle → "no such table" ist kein duplicate-column-Fehler
+    monkeypatch.setattr(sqlite_mod, "_MIGRATIONS", [
+        "ALTER TABLE existiert_nicht ADD COLUMN x INTEGER",
+    ])
+    with pytest.raises(sqlite3.OperationalError, match="no such table"):
+        LaufStore(Path(":memory:"))

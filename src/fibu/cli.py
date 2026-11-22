@@ -54,7 +54,7 @@ def _wurzel_aus_config(config: LokaleConfig) -> Path:
 
 def _cmd_pruefen(a: argparse.Namespace) -> int:
     cfg = LokaleConfig.laden()
-    print(f"Konfiguration: {cfg.config_quelle}")
+    print(f"Konfiguration: {cfg.config_quelle}", file=sys.stderr)
 
     if a.ordner:
         period_dir = Path(str(a.ordner)).expanduser().resolve()
@@ -122,7 +122,7 @@ def _cmd_freigeben(a: argparse.Namespace) -> int:
     from fibu.store import LaufStore
 
     cfg = LokaleConfig.laden()
-    print(f"Konfiguration: {cfg.config_quelle}")
+    print(f"Konfiguration: {cfg.config_quelle}", file=sys.stderr)
 
     if a.ordner:
         period_dir = Path(str(a.ordner)).expanduser().resolve()
@@ -153,7 +153,7 @@ def _cmd_llm_pruefen(_a: argparse.Namespace) -> int:
     from fibu.llm.ollama import OllamaClient
 
     cfg = LokaleConfig.laden()
-    print(f"Konfiguration: {cfg.config_quelle}")
+    print(f"Konfiguration: {cfg.config_quelle}", file=sys.stderr)
     print()
     llm = cfg.llm
 
@@ -320,7 +320,7 @@ def _cmd_monate(_a: argparse.Namespace) -> int:
     from legacy.fibu_pruefer.pipeline import find_bwa_pdf
 
     config = LokaleConfig.laden()
-    print(f"Konfiguration: {config.config_quelle}")
+    print(f"Konfiguration: {config.config_quelle}", file=sys.stderr)
     root = _wurzel_aus_config(config)
     ordner = _perioden_ordner(root)
     if not ordner:

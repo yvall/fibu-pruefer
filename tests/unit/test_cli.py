@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -59,3 +60,33 @@ def test_monat_mehrdeutig(tmp_path: Path) -> None:
 def test_monat_leeres_verzeichnis(tmp_path: Path) -> None:
     with pytest.raises(FibuFehler, match="nicht gefunden"):
         _monat_aufloesen(tmp_path, "08")
+
+
+# ---------------------------------------------------------------------------
+# Konfigurationszeile auf stderr
+# ---------------------------------------------------------------------------
+
+def test_konfigurationszeile_auf_stderr(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """'Konfiguration: …' erscheint auf stderr, nicht auf stdout."""
+    import argparse
+
+    from fibu.cli import _cmd_pruefen
+    from fibu.config import LokaleConfig
+
+    ordner = tmp_path / "periode"
+    ordner.mkdir()
+    cfg = LokaleConfig()
+    cfg_quelle = "test-quelle"
+    cfg.config_quelle = cfg_quelle  # type: ignore[misc]
+
+    a = argparse.Namespace(ordner=str(ordner), monat=None, llm=False, legacy=False, mail=False)
+
+    with (
+        patch("fibu.cli.LokaleConfig.laden", return_value=cfg),
+        patch("fibu.cli._cmd_pruefen_skills", return_value=0),
+    ):
+        _cmd_pruefen(a)
+
+    captured = capsys.readouterr()
+    assert "Konfiguration:" not in captured.out
+    assert "Konfiguration:" in captured.err

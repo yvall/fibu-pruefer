@@ -366,22 +366,19 @@ präzisere Muster für Datum und Konto prüfen.
 Extrahiert Betrag, Datum, Nummer durch String-Suche im Freitext statt strukturierte
 Felder zu nutzen. Sobald `Finding.detail` stabilere Felder trägt, umstellen.
 
-**(d) store: `_MIGRATIONS` fängt jeden `OperationalError`**
-`store/sqlite.py` ignoriert beim Ausführen von Migrationsskripten alle
-`OperationalError`-Ausnahmen. Nur `duplicate column`-Fehler sollten ignoriert
-werden; andere Fehler müssen propagiert werden.
+**(d) ✓ store: `_MIGRATIONS` fängt jeden `OperationalError`** – erledigt
+`_MIGRATIONS` fängt jetzt nur noch `"duplicate column name"`-Fehler ab;
+alle anderen `OperationalError`-Ausnahmen werden weitergegeben.
 
-**(e) CLI: Konfigurationszeile nach stderr**
-Die Zeile `Konfiguration: $FIBU_CONFIG → …` erscheint auf stdout und stört
-maschinenlesbare Ausgaben. Sie gehört auf stderr.
+**(e) ✓ CLI: Konfigurationszeile nach stderr** – erledigt
+Alle vier `print(f"Konfiguration: …")`-Aufrufe in `cli.py` schreiben auf `sys.stderr`.
 
 **(f) beleg-extraktion: Qwen-Vergleich ausstehend**
 Eval (12 Belege, Mistral): LLM-Pipeline 61,1 % vs. Basis 66,7 %. Qwen-Vergleich
 offen; ggf. anderes Modell oder Prompt-Anpassung nötig bevor Beförderung zu `stable`.
 
-**(g) Git-Tag `phase-2-graph` fehlt**
-Für saubere Versionshistorie sollte ein Tag auf den letzten Phase-2-Commit gesetzt
-werden.
+**(g) Git-Tags gesetzt**
+`phase-2-graph` und `stand-phase3-experimentell` (auf `b6d110f`) existieren.
 
 **(h) Schritt 3e-4 weitgehend abgedeckt – prüfen und streichen**
 Die in `docs/PLAN_3e.md` vorgesehene Testdatei `test_graph_rueckfrage_entwurf.py`

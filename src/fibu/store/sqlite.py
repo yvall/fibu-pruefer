@@ -83,8 +83,10 @@ class LaufStore:
         for migration in _MIGRATIONS:
             try:
                 self._conn.execute(migration)
-            except sqlite3.OperationalError:
-                pass  # Spalte existiert bereits
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
+                # Spalte existiert bereits – ignorieren
         self._conn.commit()
 
     # ------------------------------------------------------------------
