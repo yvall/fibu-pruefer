@@ -1,6 +1,6 @@
 # Fortschritt Phase 3 – LLM-Skills
 
-**Stand: 2026-11-22 · Letzter Commit: `f63bf69` · Tests: 563 (19 übersprungen)**
+**Stand: 2026-11-22 · Letzter Commit: `6fd3cc1` · Tests: 578 (19 übersprungen; mit FIBU_GOLDEN_DIR 597)**
 
 ## Gesamtstand Phase 3
 
@@ -404,3 +404,24 @@ nachzutragen ist.
 **(i) Phase 4: IMAP-Trigger und Ordner-Watcher**
 Noch nicht begonnen. Einstiegspunkt: neues `Protocol IngestSource` in
 `src/fibu/ingest/`; IMAP-Polling und Ordner-Watch als Implementierungen.
+
+**(j) Beleg-Parser: OCR-Zweitversuch für Belege ohne Betrag** – umgesetzt (`6fd3cc1`)
+`legacy/fibu_pruefer/belege.py`: Nur für per OCR gelesene Belege mit `alle == []` läuft ein
+Zweitversuch mit 15 fest gereihten Varianten (Vorverarbeitung Graustufen, Autokontrast,
+Vergrößerung 2x/3x, Schwellwert 128; je `--psm 6/11/4`, Sprache `eng` wie im Erstdurchgang).
+Es gewinnt die erste Variante, deren Text nach `analyse()` einen Betrag liefert; sie steht in
+`Beleg.ocr_variante`. Cache je Variante `<sha>.<variante>.txt`; `<sha>.txt` bleibt unberührt.
+Belege mit erkanntem Betrag werden nicht erneut gelesen (Test weist Ergebnis und Cache bitgleich nach).
+15 neue Tests in `tests/unit/test_ocr_zweitversuch.py` (gemockte OCR, synthetische Bilder; ein
+Rauchtest mit echtem Tesseract, übersprungen wenn nicht installiert). Für jede Variante belegt:
+ohne sie wird ihr Test rot.
+
+Messung 08 Aug (ohne Schalter): Belege ohne Betrag vorher 4, nachher 4 (3 Storno-Textdateien,
+nicht OCR, daher nicht betroffen; 1 OCR-Beleg `YV/101_08_Park3.pdf`). Park3 wird **nicht**
+erkannt (erwartet 2,00 €): Punktmatrix-Schrift mit durchgestrichener Null, Ziffern ca. 400 px hoch.
+Keine der 15 Varianten liefert einen Betrag; auch Gegenproben außerhalb der Liste (Verkleinerung
+0,5x–0,15x, `deu`) nicht – bestenfalls `2.00e`, was bewusst nicht als Betrag gilt.
+Befundzahlen unverändert 6/16/25, Bericht bis auf den Prüfzeitpunkt identisch, Golden-Test und
+Gesamtvergleich grün. Erstlauf 33 s (15 Tesseract-Läufe für Park3), danach aus dem Cache 2,3 s.
+Eval (`evals/run_eval.py`): kein Eval-Ordner mit `vorlage_*.json` auf diesem Rechner, nicht gelaufen.
+Nächster möglicher Schritt für solche Fotos: Bild-LLM oder andere OCR-Engine (nicht Tesseract).
