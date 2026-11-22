@@ -12,6 +12,9 @@ import tempfile
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
+from typing import Callable
+
+from PIL import Image, ImageOps
 
 from .checks import CheckResult, close, eur, pdate
 from .parser import ZERO, Auswertung, OposItem
@@ -45,6 +48,7 @@ class Beleg:
     nummern: list[str] = field(default_factory=list)
     leistung: tuple[int, int] | None = None
     ocr: bool = False
+    ocr_variante: str | None = None      # gesetzt, wenn der OCR-Zweitversuch den Text geliefert hat
 
     @property
     def norm(self) -> str:
@@ -114,6 +118,95 @@ def analyse(text: str) -> dict:
                 daten=DATE_ANY.findall(text), nummern=sorted(set(NUM_ID.findall(text))), leistung=leistungsmonat(text))
 
 
+# ---------------------------------------------------------------------------------------------
+# OCR-Zweitversuch: nur für per OCR gelesene Belege, in denen der erste Durchgang keinen Betrag fand.
+# Feste Reihenfolge; es gewinnt die erste Variante, deren Text nach analyse() einen Betrag liefert.
+# Belege mit erkanntem Betrag werden nie erneut gelesen (Ergebnis und Cache bleiben unverändert).
+
+OCR_SCHWELLE = 128
+
+
+def vv_grau(img: Image.Image) -> Image.Image:
+    return img.convert("L")
+
+
+def vv_autokontrast(img: Image.Image) -> Image.Image:
+    return ImageOps.autocontrast(vv_grau(img))
+
+
+def _vv_skaliert(faktor: int) -> Callable[[Image.Image], Image.Image]:
+    def vv(img: Image.Image) -> Image.Image:
+        g = vv_autokontrast(img)
+        return g.resize((g.width * faktor, g.height * faktor), Image.Resampling.LANCZOS)
+    return vv
+
+
+vv_x2 = _vv_skaliert(2)
+vv_x3 = _vv_skaliert(3)
+
+
+def vv_schwelle(img: Image.Image) -> Image.Image:
+    return vv_autokontrast(img).point(lambda v: 255 if v >= OCR_SCHWELLE else 0)
+
+
+OCR_VORVERARBEITUNG: tuple[tuple[str, Callable[[Image.Image], Image.Image]], ...] = (
+    ("grau", vv_grau),
+    ("autokontrast", vv_autokontrast),
+    ("x2", vv_x2),
+    ("x3", vv_x3),
+    ("schwelle", vv_schwelle),
+)
+OCR_PSM: tuple[str, ...] = ("6", "11", "4")
+
+
+def ocr_varianten() -> list[tuple[str, Callable[[Image.Image], Image.Image], str]]:
+    """Alle Varianten in fester Reihenfolge: je Vorverarbeitung die Seiteneinteilungen --psm 6, 11, 4."""
+    return [(f"{name}-psm{psm}", vv, psm) for name, vv in OCR_VORVERARBEITUNG for psm in OCR_PSM]
+
+
+def _ocr_bild(img: Image.Image, psm: str) -> str:
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "v.png"
+        img.save(f)
+        return subprocess.run(["tesseract", str(f), "stdout", "--psm", psm, "-l", "eng"],
+                              capture_output=True, text=True).stdout
+
+
+def _bilder(p: Path) -> list[Image.Image]:
+    if p.suffix.lower() == ".pdf":
+        with tempfile.TemporaryDirectory() as td:
+            subprocess.run(["pdftoppm", "-r", "300", "-png", str(p), f"{td}/p"], capture_output=True)
+            out = []
+            for f in sorted(Path(td).glob("p*.png")):
+                with Image.open(f) as im:
+                    im.load()
+                    out.append(im.copy())
+            return out
+    with Image.open(p) as im:
+        im.load()
+        return [im.copy()]
+
+
+def ocr_zweitversuch(p: Path, sha: str, cache: Path) -> tuple[str, str] | None:
+    """Liefert (Variante, Text) der ersten Variante mit erkanntem Betrag, sonst None.
+    Jede Variante hat einen eigenen Cache-Eintrag <sha>.<variante>.txt; <sha>.txt bleibt unberührt."""
+    bilder: list[Image.Image] | None = None
+    for variante, vv, psm in ocr_varianten():
+        cf = cache / f"{sha}.{variante}.txt"
+        if cf.exists():
+            text = cf.read_text(encoding="utf-8")
+        else:
+            if bilder is None:
+                bilder = _bilder(p)
+            if not bilder:
+                return None
+            text = "\n".join(_ocr_bild(vv(b), psm) for b in bilder)
+            cf.write_text(text, encoding="utf-8")
+        if analyse(text)["alle"]:
+            return variante, text
+    return None
+
+
 def _load_one(p: Path, rel: str, cache: Path) -> Beleg:
     sha = hashlib.sha1(p.read_bytes()).hexdigest()
     cf = cache / f"{sha}.txt"
@@ -123,7 +216,13 @@ def _load_one(p: Path, rel: str, cache: Path) -> Beleg:
     else:
         text, ocr = _read_text(p)
         cf.write_text(("#OCR\n" if ocr else "#TXT\n") + text, encoding="utf-8")
-    return Beleg(p, rel, sha, text, ocr=ocr, **analyse(text))
+    b = Beleg(p, rel, sha, text, ocr=ocr, **analyse(text))
+    if ocr and not b.alle:
+        treffer = ocr_zweitversuch(p, sha, cache)
+        if treffer is not None:
+            variante, text2 = treffer
+            b = Beleg(p, rel, sha, text2, ocr=True, ocr_variante=variante, **analyse(text2))
+    return b
 
 
 def scan(period_dir: Path, bwa_dirname: str = "BWA") -> list[Beleg]:
