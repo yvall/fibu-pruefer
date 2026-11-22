@@ -1,6 +1,6 @@
 # Fortschritt Phase 3 – LLM-Skills
 
-**Stand: 2026-11-22 · Letzter Commit: folgt · Tests: 563 (19 übersprungen)**
+**Stand: 2026-11-22 · Letzter Commit: `f63bf69` · Tests: 563 (19 übersprungen)**
 
 ## Gesamtstand Phase 3
 
@@ -28,7 +28,7 @@
 | 3e-3 Nachb. b | `be2534a` | Pflichtzahlen = gezeigte Zahlen (nur `f.title`); Diagnose in `_meta`; sauberer Rückfalltext |
 | 3e-3d | `e25a184` | 7 Schutztests wiederhergestellt (Szenario 1–7) |
 | 3e-3e | `4dd148f` | Vollständigkeit: Richtung (Haben/Soll + Konto) und Anzahl-Substantiv ("5 Konten", "6 Monatswerte"); Prompt auf 800 Zeichen; 13 neue Tests |
-| 3e-3f | folgt | Pro-Gruppe-Aufruf, Sammelgruppe (>max_befunde), Timeout-Meldung, neue Schlusszeile; 5 neue Tests (563 gesamt) |
+| 3e-3f | `f63bf69` | Pro-Gruppe-Aufruf, Sammelgruppe (>max_befunde), Timeout-Meldung, neue Schlusszeile; 5 neue Tests (563 gesamt) |
 
 ### Entscheidungen
 
