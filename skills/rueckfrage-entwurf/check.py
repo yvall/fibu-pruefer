@@ -7,6 +7,11 @@ LLM-Formulierung: Ein Modellaufruf für alle Gruppen. Zuordnung per Regelname.
 Zahl-Kontrolle je Gruppe nur auf Basis der im Prompt gezeigten Zahlen (f.title),
 nicht auf f.detail. Diagnose (Rückfallgrund je Gruppe) geht in _meta, nicht
 in den Befundtext. Versand-tauglicher Text: keine Diagnosetexte im Detail.
+
+Pflichtangaben (Vollständigkeit, aus Titeln):
+- Beträge (€), Kontonummern (Konto NNNN), Anzahlen (N×, N überfällig)
+- Anzahlen vor Substantiv: "5 Konten", "6 Monatswerte" (1–3-stellig + Großbuchstabe)
+- Haben/Soll-Richtung, wenn sie gemeinsam mit einer Kontonummer im Titel steht
 """
 from __future__ import annotations
 
@@ -45,9 +50,13 @@ _BETRAG_RE = re.compile(
 )
 # Kontonummern nach "Konto" (mindestens 3-stellig)
 _KONTO_RE = re.compile(r'[Kk]onto\s+(\d{3,})')
-# Anzahlen (N× oder N vor überfällig/offene)
+# Anzahlen (N× oder N vor überfällig)
 _ANZAHL_RE = re.compile(r'(\d+)\s*[×x]')
 _ANZAHL2_RE = re.compile(r'(\d+)\s+überfällig', re.IGNORECASE)
+# Anzahl vor deutschem Substantiv (1–3-stellig + Großbuchstabe): "5 Konten", "6 Monatswerte"
+_ANZAHL_SUBST_RE = re.compile(r'(?<!\d)(\d{1,3})\s+[A-ZÄÖÜ][a-zäöüß]+')
+# Haben/Soll-Richtung (Bilanzseite)
+_RICHTUNG_RE = re.compile(r'\b(Haben|Soll)\b')
 
 # Zahlwörter, die der LLM-Text nicht enthalten darf
 _ZAHLWOERTER: frozenset[str] = frozenset({
@@ -65,7 +74,7 @@ _ZAHLWOERTER: frozenset[str] = frozenset({
 
 class _Gruppe(BaseModel):
     thema: str    # Skill-ID (exakt wie angegeben), max. 60 Zeichen
-    text: str     # Rückfragetext, max. 500 Zeichen, kein Markdown
+    text: str     # Rückfragetext, max. 800 Zeichen, kein Markdown
 
 
 class _LlmAntwort(BaseModel):
@@ -119,7 +128,7 @@ def _extrahiere_zahlen_norm(findings: list[Finding]) -> frozenset[str]:
 
 
 def _pflicht_zahlen_norm(findings: list[Finding]) -> frozenset[str]:
-    """Beträge (€), Kontonummern (≥3-stellig) und Anzahlen (N×) aus f.title.
+    """Beträge (€), Kontonummern, Anzahlen (N×/N überfällig/N Substantiv) aus f.title.
 
     Nur Zahlen aus dem Titel, da der Prompt nur f.title zeigt. Zahlen aus
     f.detail bleiben unsichtbar für das Modell und werden weder verlangt
@@ -136,7 +145,19 @@ def _pflicht_zahlen_norm(findings: list[Finding]) -> frozenset[str]:
             zahlen.add(m.group(1))
         for m in _ANZAHL2_RE.finditer(src):
             zahlen.add(m.group(1))
+        for m in _ANZAHL_SUBST_RE.finditer(src):
+            zahlen.add(m.group(1))
     return frozenset(zahlen)
+
+
+def _pflicht_woerter(findings: list[Finding]) -> frozenset[str]:
+    """'Haben' und 'Soll' nur wenn sie mit einer Kontonummer im selben Titel stehen."""
+    woerter: set[str] = set()
+    for f in findings:
+        if _KONTO_RE.search(f.title):
+            for m in _RICHTUNG_RE.finditer(f.title):
+                woerter.add(m.group(1))
+    return frozenset(woerter)
 
 
 def _periode_zahlen_norm(auswertung: Auswertung) -> frozenset[str]:
@@ -160,11 +181,12 @@ def _pruefe_gruppe(
     """Prüft LLM-Text für eine Gruppe: keine Zahlwörter, keine Fremdzahlen, vollständig.
 
     Rückgabe: (ok, grund). Grund ist leer wenn ok.
-    Vollständigkeit: alle Beträge (€), Kontonummern und Anzahlen aus den
-    Befunden müssen (normalisiert) im LLM-Text vorkommen.
+    Vollständigkeit: alle Beträge (€), Kontonummern, Anzahlen und Haben/Soll-Richtung
+    aus den Befundtiteln müssen im LLM-Text vorkommen.
     """
     quell_norm = _extrahiere_zahlen_norm(gruppe)
     pflicht_norm = _pflicht_zahlen_norm(gruppe)
+    pflicht_woerter_menge = _pflicht_woerter(gruppe)
     erlaubt = quell_norm | _periode_zahlen_norm(auswertung)
     llm_norm = _zahlen_norm_aus_text(text)
     periode = _periode_zahlen_norm(auswertung)
@@ -179,6 +201,10 @@ def _pruefe_gruppe(
     for n in pflicht_norm:
         if n not in llm_norm and n not in periode:
             return False, f"Pflichtzahl fehlt: {n}"
+
+    for w in sorted(pflicht_woerter_menge):
+        if not re.search(rf'\b{w}\b', text, re.IGNORECASE):
+            return False, f"Pflicht-Richtung fehlt: {w}"
 
     return True, ""
 

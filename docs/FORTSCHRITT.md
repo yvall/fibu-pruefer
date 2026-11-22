@@ -1,6 +1,6 @@
 # Fortschritt Phase 3 – LLM-Skills
 
-**Stand: 2026-11-22 · Letzter Commit: `e25a184` · Tests: 543 (19 übersprungen)**
+**Stand: 2026-11-22 · Letzter Commit: folgt · Tests: 558 (19 übersprungen)**
 
 ## Gesamtstand Phase 3
 
@@ -27,6 +27,7 @@
 | 3e-3 Nachb. a | `e8963f6` | Dopplung im Bericht behoben; Zuordnung per Regelname; Zahl-Kontrolle je Gruppe; Prompt-Update |
 | 3e-3 Nachb. b | `be2534a` | Pflichtzahlen = gezeigte Zahlen (nur `f.title`); Diagnose in `_meta`; sauberer Rückfalltext |
 | 3e-3d | `e25a184` | 7 Schutztests wiederhergestellt (Szenario 1–7) |
+| 3e-3e | folgt | Vollständigkeit: Richtung (Haben/Soll + Konto) und Anzahl-Substantiv ("5 Konten", "6 Monatswerte"); Prompt auf 800 Zeichen; 13 neue Tests |
 
 ### Entscheidungen
 
@@ -351,11 +352,13 @@ und `Auswertung.to_legacy()` in `src/fibu/contracts/auswertung.py` ergänzt.
 
 ## Offene Punkte
 
-**(a) rueckfrage-entwurf: Vollständigkeit erweitern**
-Der Entwurf lässt Haben/Soll-Richtung und zusammenfassende Zählangaben wie
-„5 Konten mit nachträglich geänderten Buchungen" weg, weil `_pflicht_zahlen_norm`
-nur Beträge (€), Kontonummern (`Konto NNNN`) und Anzahlen (`N×`) erfasst.
-Haben/Soll-Richtung und freie Zählangaben als Pflichtkategorien ergänzen.
+**(a) ✓ rueckfrage-entwurf: Vollständigkeit erweitern** – erledigt (3e-3e)
+`_pflicht_zahlen_norm` erkennt jetzt zusätzlich Anzahlen vor deutschem Substantiv
+(`_ANZAHL_SUBST_RE`: `"5 Konten"`, `"6 Monatswerte"`). Neue Funktion `_pflicht_woerter()`
+liefert `"Haben"`/`"Soll"` als Pflicht-Angabe, wenn sie im selben Titel wie eine
+Kontonummer stehen. `_pruefe_gruppe()` prüft beides. Prompt auf 800 Zeichen erweitert.
+13 neue Tests. Echtlauf (Ollama nicht erreichbar): 0/8 LLM, 8/8 deterministisch;
+neue Muster greifen in Titeln von `vormonat-fortschreibung` und `saldenrichtung`.
 
 **(b) rueckfrage-entwurf: Zahlenkontrolle prüft nur Ziffern**
 Datumswerte (z. B. `14.08.2026`), Prozentzahlen und Kontonummern werden als

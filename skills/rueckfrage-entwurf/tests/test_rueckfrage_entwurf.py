@@ -22,6 +22,7 @@ _normalize_zahl = _mod._normalize_zahl  # type: ignore[attr-defined]
 _extrahiere_zahlen_norm = _mod._extrahiere_zahlen_norm  # type: ignore[attr-defined]
 _zahlen_norm_aus_text = _mod._zahlen_norm_aus_text  # type: ignore[attr-defined]
 _pflicht_zahlen_norm = _mod._pflicht_zahlen_norm  # type: ignore[attr-defined]
+_pflicht_woerter = _mod._pflicht_woerter  # type: ignore[attr-defined]
 _periode_zahlen_norm = _mod._periode_zahlen_norm  # type: ignore[attr-defined]
 _enthaelt_zahlwort = _mod._enthaelt_zahlwort  # type: ignore[attr-defined]
 _pruefe_gruppe = _mod._pruefe_gruppe  # type: ignore[attr-defined]
@@ -152,6 +153,16 @@ class TestPflichtZahlen:
         f = _f("r", "fehler", "Lfd. Nr. 500 betroffen")
         assert "500" not in _pflicht_zahlen_norm([f])
 
+    def test_anzahl_vor_substantiv_5_konten(self) -> None:
+        # Rot ohne _ANZAHL_SUBST_RE: "5" steht vor Großbuchstabe, aber kein €/Konto/×
+        f = _f("r", "fehler", "5 Konten mit nachträglich geänderten Buchungen")
+        assert "5" in _pflicht_zahlen_norm([f])
+
+    def test_anzahl_vor_substantiv_6_monatswerte(self) -> None:
+        # Rot ohne _ANZAHL_SUBST_RE: "6" vor "Monatswerte" (kein ×, kein €, kein Konto)
+        f = _f("r", "fehler", "6 Monatswerte weichen ab")
+        assert "6" in _pflicht_zahlen_norm([f])
+
 
 # ---------------------------------------------------------------------------
 # Periode-Zahlen (immer erlaubt)
@@ -166,6 +177,42 @@ class TestPeriodeZahlen:
 
     def test_enthaelt_monat_null_padded(self) -> None:
         assert "08" in _periode_zahlen_norm(_a())
+
+
+# ---------------------------------------------------------------------------
+# Haben/Soll-Pflichtangaben
+# ---------------------------------------------------------------------------
+
+class TestPflichtWoerter:
+    def test_haben_mit_konto(self) -> None:
+        # Rot ohne _pflicht_woerter: Funktion existierte nicht / lieferte leere Menge
+        f = _f("r", "fehler", "Konto 1370 Haben ungewöhnlich")
+        assert "Haben" in _pflicht_woerter([f])
+
+    def test_soll_mit_konto(self) -> None:
+        f = _f("r", "fehler", "Konto 1370 Soll zu hoch")
+        assert "Soll" in _pflicht_woerter([f])
+
+    def test_haben_ohne_konto_nicht_pflicht(self) -> None:
+        # Haben ohne begleitende Kontonummer → kein Pflicht-Wort
+        f = _f("r", "fehler", "Haben zu hoch")
+        assert "Haben" not in _pflicht_woerter([f])
+
+    def test_soll_ohne_konto_nicht_pflicht(self) -> None:
+        f = _f("r", "fehler", "Soll zu niedrig")
+        assert "Soll" not in _pflicht_woerter([f])
+
+    def test_beide_richtungen_mit_konto(self) -> None:
+        befunde = [
+            _f("r", "fehler", "Konto 1370 Haben Differenz"),
+            _f("r", "fehler", "Konto 1200 Soll zu niedrig"),
+        ]
+        woerter = _pflicht_woerter(befunde)
+        assert "Haben" in woerter
+        assert "Soll" in woerter
+
+    def test_leer_wenn_keine_befunde(self) -> None:
+        assert _pflicht_woerter([]) == frozenset()
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +322,26 @@ class TestPruefeGruppe:
         f = _f("r", "fehler", "Rechenweg")
         ok, _ = _pruefe_gruppe("Für August 2024 bitte prüfen.", [f], _a())
         assert ok
+
+    def test_richtung_muss_vorkommen(self) -> None:
+        # Rot ohne _pflicht_woerter-Check: Text ohne "Haben" würde ok liefern
+        f = _f("r", "fehler", "Konto 1370 Haben Differenz")
+        ok, grund = _pruefe_gruppe("Konto 1370 bitte klären.", [f], _a())
+        assert not ok
+        assert "Pflicht-Richtung fehlt" in grund
+
+    def test_richtung_vorhanden_ok(self) -> None:
+        # Vollständiger Text mit Kontonummer und Richtung → ok
+        f = _f("r", "fehler", "Konto 1370 Haben Differenz")
+        ok, _ = _pruefe_gruppe("Konto 1370 Haben bitte klären.", [f], _a())
+        assert ok
+
+    def test_anzahl_substantiv_muss_vorkommen(self) -> None:
+        # Rot ohne _ANZAHL_SUBST_RE in _pflicht_zahlen_norm: "5" fehlt in Pflichtmenge
+        f = _f("r", "fehler", "5 Konten mit Abweichungen")
+        ok, grund = _pruefe_gruppe("Konten weisen Abweichungen auf.", [f], _a())
+        assert not ok
+        assert "Pflichtzahl fehlt" in grund
 
 
 # ---------------------------------------------------------------------------
@@ -683,6 +750,30 @@ class TestPromptStruktur:
         ctx = _ctx([_f("r", "fehler", "Fehler")])
         run(ctx, llm)
         assert "Ziffern" in llm.prompt or "Zahlwort" in llm.prompt
+
+    def test_llm_richtung_fehlt_fallback(self) -> None:
+        # Rot ohne _pflicht_woerter-Check: "Haben" fehlt → sollte Rückfall sein, war es nicht
+        llm = _FakeLlm(response={"gruppen": [
+            {"thema": "summen-salden", "text": "Konto 1370 bitte klären."}
+        ]})
+        ctx = _ctx([_f("summen-salden", "fehler", "Konto 1370 Haben ungewöhnlich")])
+        result = run(ctx, llm)
+        m = _meta()
+        assert "summen-salden" in m.get("rueckfall_gruppen", {})
+        assert "Pflicht-Richtung fehlt" in m["rueckfall_gruppen"]["summen-salden"]
+        assert "Haben" in result[0].detail  # deterministischer Rückfall enthält den Titel
+
+    def test_llm_anzahl_substantiv_fehlt_fallback(self) -> None:
+        # Rot ohne _ANZAHL_SUBST_RE: "5" war kein Pflicht-Wert → LLM-Text ohne "5" würde ok
+        llm = _FakeLlm(response={"gruppen": [
+            {"thema": "bwa-rechenwege", "text": "Konten weisen Abweichungen auf."}
+        ]})
+        ctx = _ctx([_f("bwa-rechenwege", "fehler", "5 Konten mit Abweichungen")])
+        result = run(ctx, llm)
+        m = _meta()
+        assert "bwa-rechenwege" in m.get("rueckfall_gruppen", {})
+        assert "Pflichtzahl fehlt" in m["rueckfall_gruppen"]["bwa-rechenwege"]
+        assert "5 Konten" in result[0].detail  # deterministischer Rückfall enthält den Titel
 
     def test_prompt_injektion_vollstaendigkeit_geprueft(self) -> None:
         """Szenario 7: Injektionsversuch im Titel ändert nicht, dass Betrag geprüft wird."""
