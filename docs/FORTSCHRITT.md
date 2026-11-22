@@ -1,5 +1,69 @@
 # Fortschritt Phase 3 – LLM-Skills
 
+**Stand: 2026-11-22 · Letzter Commit: `e25a184` · Tests: 543 (19 übersprungen)**
+
+## Gesamtstand Phase 3
+
+| Schritt | Inhalt | Status |
+|---|---|---|
+| 3a | LLM-Adapter (`LlmClient`, `OllamaClient`, `NullLlmClient`) | ✓ |
+| 3b | LLM-Integration Skills-Runtime | ✓ |
+| 3c | LLM-Skill `beleg-extraktion` (deterministischer Betrag + LLM-Datum/Nr.) | ✓ experimentell |
+| 3d | `beleg-zuordnung` – Belege deterministisch Konten/Findings zuordnen | ⏳ offen |
+| 3e | Skill `rueckfrage-entwurf` – Rückfragen-Entwurf mit LLM-Formulierung | ✓ experimentell |
+| Phase 4 | IMAP-Trigger, Ordner-Watcher | ⏳ offen |
+
+---
+
+## Schritt 3e – Skill `rueckfrage-entwurf` ✓ (experimentell)
+
+### Commits
+
+| Teilschritt | Commit | Inhalt |
+|---|---|---|
+| 3e-1 | `38f7fc1` | `Context.befunde` + Runtime-Befüllung; `llm: optional`-Flag; befunde_skills laufen nach allen normalen Skills |
+| 3e-2 | `7b4ceab` | Deterministischer Kern: Markdown-Liste, Schlussbitte einmal je Gruppe |
+| 3e-3 | `d8bd2f8` | LLM-Formulierung: Prompt-Template, `_pruefe_zahlen_konsistenz`, Fake-LLM-Tests |
+| 3e-3 Nachb. a | `e8963f6` | Dopplung im Bericht behoben; Zuordnung per Regelname; Zahl-Kontrolle je Gruppe; Prompt-Update |
+| 3e-3 Nachb. b | `be2534a` | Pflichtzahlen = gezeigte Zahlen (nur `f.title`); Diagnose in `_meta`; sauberer Rückfalltext |
+| 3e-3d | `e25a184` | 7 Schutztests wiederhergestellt (Szenario 1–7) |
+
+### Entscheidungen
+
+- **`llm: optional`** im Frontmatter: Skill läuft mit `NullLlmClient` (deterministischer Fallback), kein Laufabbruch.
+- **`status: experimental`**: standardmäßig deaktiviert; Schalter `llm.experimentelle_skills_aktiv: true` aktiviert ihn.
+- **Pflichtzahlen = gezeigte Zahlen**: `_pflicht_zahlen_norm` und `_extrahiere_zahlen_norm` lesen nur `f.title`, da der Prompt dem Modell nur Titel zeigt, nicht Details.
+- **Diagnose** (Rückfallgrund je Gruppe) geht in `SkillResult.meta["rueckfall_gruppen"]`, nicht in den Befundtext.
+- **Bericht**: Experimentelle Findings erscheinen ausschließlich im Abschnitt „🤖 KI-gestützt", nicht in Fehler-/Auffälligkeits-/Hinweis-Zählern.
+
+### Echtlauf August 2026 (Mistral)
+
+Nach 3e-3b: **8 von 8 Gruppen LLM-formuliert, 0 Rückfälle.**
+Vor Korrektur (3e-3 original): 2/8 LLM, 6/8 Rückfall (Ursache: `_pflicht_zahlen_norm` las `f.detail`).
+
+---
+
+## Experimentelle Skills – Infrastruktur ✓
+
+Aufgebaut im Rahmen von 3e (`e8963f6`):
+
+| Komponente | Inhalt |
+|---|---|
+| `LlmConfig.experimentelle_skills_aktiv` | Schalter in `LlmConfig`, Standard `false`; in `config/lokal.example.yaml` und `config/default.yaml` dokumentiert |
+| `SkillResult.experimentell`, `.deaktiviert` | Flags: von `run_one_skill()` im Runner gesetzt; beim SQLite-Roundtrip erhalten |
+| Graph | `experimentelle_aktiv` wird in `create_graph()` und `run_pruefung()` aus `LokaleConfig` gelesen |
+| Bericht | `overall_severity`, Zähler, Schweregrad-Blöcke und „Ohne Befund" schließen experimentelle Results aus; Fehler aktiver experimenteller Skills erscheinen in KI-gestützt |
+
+---
+
+## Schritt 3c – beleg-extraktion: Entscheidung experimentell ✓
+
+Eval-Ergebnis (Mistral:latest, 12 Belege): LLM-Pipeline 61,1 % vs. Basis 66,7 %.
+Stichprobe unter Mindestgröße (25 Belege). Qwen-Vergleich ausstehend (→ Offene Punkte f).
+Kriterien für Beförderung zu `stable` stehen in `docs/PLAN_PHASE_3.md`.
+
+---
+
 ## Schritt 3c – LLM-Skill `beleg-extraktion` ✓
 
 Neue Pakete und Änderungen:
@@ -282,3 +346,54 @@ Strategie: jeder Skill beginnt als **Thin Wrapper** (ruft Legacy-Funktion auf,
 konvertiert `legacy.Finding → contracts.Finding`). Der Golden-Test muss nach
 jeder Migration grün bleiben. Für Thin Wrapper werden `Auswertung.from_legacy()`
 und `Auswertung.to_legacy()` in `src/fibu/contracts/auswertung.py` ergänzt.
+
+---
+
+## Offene Punkte
+
+**(a) rueckfrage-entwurf: Vollständigkeit erweitern**
+Der Entwurf lässt Haben/Soll-Richtung und zusammenfassende Zählangaben wie
+„5 Konten mit nachträglich geänderten Buchungen" weg, weil `_pflicht_zahlen_norm`
+nur Beträge (€), Kontonummern (`Konto NNNN`) und Anzahlen (`N×`) erfasst.
+Haben/Soll-Richtung und freie Zählangaben als Pflichtkategorien ergänzen.
+
+**(b) rueckfrage-entwurf: Zahlenkontrolle prüft nur Ziffern**
+Datumswerte (z. B. `14.08.2026`), Prozentzahlen und Kontonummern werden als
+Ziffernfolgen verglichen, ohne Kontext. Falsch-Positive und -Negative möglich;
+präzisere Muster für Datum und Konto prüfen.
+
+**(c) eval: `run_eval.py` parst `Finding.detail`-Strings**
+Extrahiert Betrag, Datum, Nummer durch String-Suche im Freitext statt strukturierte
+Felder zu nutzen. Sobald `Finding.detail` stabilere Felder trägt, umstellen.
+
+**(d) store: `_MIGRATIONS` fängt jeden `OperationalError`**
+`store/sqlite.py` ignoriert beim Ausführen von Migrationsskripten alle
+`OperationalError`-Ausnahmen. Nur `duplicate column`-Fehler sollten ignoriert
+werden; andere Fehler müssen propagiert werden.
+
+**(e) CLI: Konfigurationszeile nach stderr**
+Die Zeile `Konfiguration: $FIBU_CONFIG → …` erscheint auf stdout und stört
+maschinenlesbare Ausgaben. Sie gehört auf stderr.
+
+**(f) beleg-extraktion: Qwen-Vergleich ausstehend**
+Eval (12 Belege, Mistral): LLM-Pipeline 61,1 % vs. Basis 66,7 %. Qwen-Vergleich
+offen; ggf. anderes Modell oder Prompt-Anpassung nötig bevor Beförderung zu `stable`.
+
+**(g) Git-Tag `phase-2-graph` fehlt**
+Für saubere Versionshistorie sollte ein Tag auf den letzten Phase-2-Commit gesetzt
+werden.
+
+**(h) Schritt 3e-4 weitgehend abgedeckt – prüfen und streichen**
+Die in `docs/PLAN_3e.md` vorgesehene Testdatei `test_graph_rueckfrage_entwurf.py`
+wurde nicht angelegt. Der Kern der Anforderung (*(experimentell)*-Label im Bericht,
+Hinweis-Zähler unverändert bei eingeschaltetem Schalter) ist durch
+`tests/integration/test_graph_pipeline.py::test_experimentell_findings_erhoehen_hinweis_zaehler_nicht`
+und `tests/unit/test_report_experimentell.py` (16 Tests) abgedeckt.
+Nicht abgedeckt: ein echter Graph-Lauf mit `experimentelle_skills_aktiv=True`, der
+den `rueckfrage-entwurf`-Skill tatsächlich instanziiert (statt mockt). Schritt 3e-4
+in PLAN_3e.md als weitgehend erledigt markieren; prüfen ob der fehlende End-to-End-Test
+nachzutragen ist.
+
+**(i) Phase 4: IMAP-Trigger und Ordner-Watcher**
+Noch nicht begonnen. Einstiegspunkt: neues `Protocol IngestSource` in
+`src/fibu/ingest/`; IMAP-Polling und Ordner-Watch als Implementierungen.

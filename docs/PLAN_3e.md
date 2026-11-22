@@ -299,13 +299,27 @@ Commit: `Skill rueckfrage-entwurf: LLM-Formulierung mit Zahl-Kontrolle`
 
 ---
 
-### Schritt 3e-4 – Graph-Integrationstest und Bericht-Label
+### Schritt 3e-4 – Graph-Integrationstest und Bericht-Label ⚠️ teilweise offen
 
-Dateien:
-- `tests/integration/test_graph_rueckfrage_entwurf.py`: Graph-Lauf mit
-  `experimentelle_skills_aktiv=True` + NullLlmClient → `*(experimentell)*` im Bericht
+Die geplante Datei `tests/integration/test_graph_rueckfrage_entwurf.py` wurde nicht angelegt.
 
-Commit: `Skill rueckfrage-entwurf: Graph-Integrationstest`
+**Was abgedeckt ist:**
+
+| Anforderung | Abdeckung |
+|---|---|
+| *(experimentell)*-Label im Bericht | `test_report_experimentell.py::test_experimentell_label_bei_aktivem_skill` |
+| Hinweis-Zähler unverändert bei experimentellem Skill | `test_graph_pipeline.py::test_experimentell_findings_erhoehen_hinweis_zaehler_nicht` (Graph-Lauf mit `run_pruefung`, gemocktes `run_skills`) |
+| Findings nur in KI-gestützt, nicht in Fehler/Hinweise | `test_report_experimentell.py` (5 Tests in Nachbesserung-Block) |
+| Deaktiviert-Hinweis bei `experimentelle_skills_aktiv=false` | `test_report_experimentell.py::test_hinweis_bei_deaktiviertem_skill` |
+
+**Was fehlt:**
+
+Ein echter Graph-Lauf, der `experimentelle_skills_aktiv=True` über `LokaleConfig` liest
+und den `rueckfrage-entwurf`-Skill tatsächlich lädt und ausführt (kein gemocktes
+`run_skills`). Dieser End-to-End-Pfad ist bislang ungetestet.
+
+**Empfehlung:** Schritt 3e-4 als weitgehend erledigt werten; bei Bedarf einen
+minimalen End-to-End-Test ergänzen (vgl. Offene Punkte h in `docs/FORTSCHRITT.md`).
 
 ---
 
