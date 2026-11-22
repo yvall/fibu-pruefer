@@ -11,6 +11,10 @@ class NullLlmClient:
     def modell(self) -> str:
         return "null"
 
+    @property
+    def max_befunde_je_gruppe(self) -> int:
+        return 3
+
     def modell_fuer(self, skill_id: str) -> str:
         return "null"
 

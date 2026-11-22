@@ -254,9 +254,11 @@ def to_markdown(a: Auswertung, results: list[SkillResult]) -> str:
                 if "rueckfall_gruppen" in r.meta:
                     n_ges = r.meta.get("gruppen_gesamt", 0)
                     n_llm = r.meta.get("llm_gruppen", 0)
+                    n_sammel = r.meta.get("sammelgruppen", 0)
+                    n_rueck = len(r.meta.get("rueckfall_gruppen", {})) - n_sammel
                     lines.append(
                         f"*Formulierung durch Modell: {n_llm} von {n_ges} Gruppen;"
-                        " Rest als Standardtext*"
+                        f" {n_sammel} Sammelgruppen und {n_rueck} Rückfälle als Standardtext*"
                     )
                     lines.append("")
             else:

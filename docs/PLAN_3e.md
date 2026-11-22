@@ -249,12 +249,13 @@ Wenn beide Schalter aktiv sind, landen seine Findings im Pool; wenn nicht, fehle
 experimentellen Skills, einschließlich deren Findings im Rückfragen-Entwurf. Keine
 Sonderbehandlung nötig – der Pool enthält einfach, was die Runtime geliefert hat.
 
-**F3 – Prompt-Template: ein Aufruf pro Lauf oder ein Aufruf pro Themengruppe?**  
-*Problem:* Ein einzelner Aufruf mit allen Gruppen ist günstiger (Latenz, Kosten),
-birgt aber höheres Risiko für ein voluminöses, schwer zu validierendes Output.
-*Empfehlung:* Ein Aufruf pro Lauf mit allen Gruppen auf einmal; `_LlmAntwort.gruppen`
-ist eine Liste. Wenn die Pydantic-Validierung fehlschlägt, gilt der Rückfall für alle
-Gruppen gemeinsam. Bei Bedarf kann später auf gruppenweise Aufrufe umgestellt werden.
+**F3 – ✓ Entschieden: Ein Aufruf pro Themengruppe (ab 3e-3f)**  
+Messung (Mistral, Apple Silicon, 08 Aug 2026): Ein Aufruf für alle 8 Gruppen = 8:22 min,
+5/8 LLM. Ein Aufruf pro Gruppe (3e-3f): 7:32 min, 3/8 LLM (2 Sammelgruppen mit >3 Befunden
+übersprungen, 3 Gruppen fassen kürzer als 3 Befunde → LLM, Rest Rückfall).
+Vorteil: Fehler oder Timeout einer Gruppe betrifft nur sie, nicht den Rest.
+JSON-Schema vereinfacht auf Einzelgruppe `{"thema":…, "text":…}`.
+`llm.max_befunde_je_gruppe` (Standard 3) steuert Sammelgruppen-Schwelle.
 
 ---
 

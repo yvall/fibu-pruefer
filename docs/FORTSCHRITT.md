@@ -1,6 +1,6 @@
 # Fortschritt Phase 3 – LLM-Skills
 
-**Stand: 2026-11-22 · Letzter Commit: `4dd148f` · Tests: 558 (19 übersprungen)**
+**Stand: 2026-11-22 · Letzter Commit: folgt · Tests: 563 (19 übersprungen)**
 
 ## Gesamtstand Phase 3
 
@@ -28,6 +28,7 @@
 | 3e-3 Nachb. b | `be2534a` | Pflichtzahlen = gezeigte Zahlen (nur `f.title`); Diagnose in `_meta`; sauberer Rückfalltext |
 | 3e-3d | `e25a184` | 7 Schutztests wiederhergestellt (Szenario 1–7) |
 | 3e-3e | `4dd148f` | Vollständigkeit: Richtung (Haben/Soll + Konto) und Anzahl-Substantiv ("5 Konten", "6 Monatswerte"); Prompt auf 800 Zeichen; 13 neue Tests |
+| 3e-3f | folgt | Pro-Gruppe-Aufruf, Sammelgruppe (>max_befunde), Timeout-Meldung, neue Schlusszeile; 5 neue Tests (563 gesamt) |
 
 ### Entscheidungen
 
@@ -36,11 +37,17 @@
 - **Pflichtzahlen = gezeigte Zahlen**: `_pflicht_zahlen_norm` und `_extrahiere_zahlen_norm` lesen nur `f.title`, da der Prompt dem Modell nur Titel zeigt, nicht Details.
 - **Diagnose** (Rückfallgrund je Gruppe) geht in `SkillResult.meta["rueckfall_gruppen"]`, nicht in den Befundtext.
 - **Bericht**: Experimentelle Findings erscheinen ausschließlich im Abschnitt „🤖 KI-gestützt", nicht in Fehler-/Auffälligkeits-/Hinweis-Zählern.
+- **Pro-Gruppe-Aufruf** (3e-3f): Ein LLM-Aufruf je Gruppe (nicht alle auf einmal). `llm.max_befunde_je_gruppe` (Standard 3): Gruppen mit mehr Befunden → deterministisch („Sammelgruppe"), kein LLM-Aufruf. Timeout/Fehler einer Gruppe betrifft nur sie.
+- **Schlusszeile** (3e-3f): „X von Y Gruppen; Z Sammelgruppen und N Rückfälle als Standardtext".
 
 ### Echtlauf August 2026 (Mistral)
 
 Nach 3e-3b: **8 von 8 Gruppen LLM-formuliert, 0 Rückfälle.**
 Vor Korrektur (3e-3 original): 2/8 LLM, 6/8 Rückfall (Ursache: `_pflicht_zahlen_norm` las `f.detail`).
+
+Nach 3e-3f (Pro-Gruppe-Aufruf, max_befunde=3): **3/8 LLM, 2 Sammelgruppen, 3 Rückfälle; 7:32 min** (Apple Silicon, Mistral).
+Sammelgruppen: `saldenrichtung` (5 Befunde), `vormonat-fortschreibung` (8 Befunde).
+Rückfälle: `belege-abgleich`, `durchlaufende-posten`, `umsatz-beweis` (Zahlen-/Vollständigkeitsprüfung).
 
 ---
 

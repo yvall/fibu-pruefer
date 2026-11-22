@@ -32,6 +32,7 @@ llm:
   modell: mistral:latest            # leer lassen → LLM-Skills überspringen, kein Fehler
   temperatur: 0.0                   # 0.0 für reproduzierbare Eval-Ergebnisse
   timeout_sekunden: 120
+  max_befunde_je_gruppe: 3          # Gruppen mit mehr Befunden → deterministischer Text
   # modell_zuordnung:               # optionales Modell je Skill-ID
   #   beleg-extraktion: llama3:8b
   #   rueckfrage-entwurf: mistral:latest

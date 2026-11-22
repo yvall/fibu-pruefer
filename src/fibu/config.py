@@ -19,6 +19,7 @@ class LlmConfig(BaseModel):
     modell_zuordnung: dict[str, str] = Field(default_factory=dict)
     keep_alive: str = "5m"  # Wie lange das Modell geladen bleibt (z. B. "5m", "-1" = dauerhaft)
     experimentelle_skills_aktiv: bool = False  # Skills mit status=experimental einschalten
+    max_befunde_je_gruppe: int = 3  # Gruppen mit mehr Befunden → deterministischer Fallback ("Sammelgruppe")
 
 
 class MailConfig(BaseModel):

@@ -109,6 +109,44 @@ def test_generiere_netzwerkfehler_gibt_none() -> None:
     assert result is None
 
 
+def test_generiere_zeitüberschreitung_gibt_none() -> None:
+    client = OllamaClient.aus_config(_config())
+    with patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")):
+        result = client.generiere("Test")
+    assert result is None
+
+
+def test_generiere_zeitüberschreitung_url_error_gibt_none() -> None:
+    """urllib.error.URLError mit TimeoutError als reason → None."""
+    import urllib.error
+    err = urllib.error.URLError(reason=TimeoutError("timed out"))
+    client = OllamaClient.aus_config(_config())
+    with patch("urllib.request.urlopen", side_effect=err):
+        result = client.generiere("Test")
+    assert result is None
+
+
+def test_generiere_zeitüberschreitung_meldung_nennt_sekunden(caplog: Any) -> None:
+    """Timeout-Log enthält 'Zeitüberschreitung' und die konfigurierten Sekunden."""
+    import logging
+    err = urllib.error.URLError(reason=TimeoutError("timed out"))
+    client = OllamaClient.aus_config(_config(timeout_sekunden=42))
+    with patch("urllib.request.urlopen", side_effect=err), \
+            caplog.at_level(logging.WARNING, logger="fibu.llm.ollama"):
+        client.generiere("Test")
+    assert any("Zeitüberschreitung" in r.message and "42" in r.message for r in caplog.records)
+
+
+def test_generiere_verbindungsfehler_meldung_nennt_nicht_erreichbar(caplog: Any) -> None:
+    """Nicht-Timeout-Fehler → Meldung enthält 'nicht erreichbar'."""
+    import logging
+    client = OllamaClient.aus_config(_config())
+    with patch("urllib.request.urlopen", side_effect=OSError("Connection refused")), \
+            caplog.at_level(logging.WARNING, logger="fibu.llm.ollama"):
+        client.generiere("Test")
+    assert any("nicht erreichbar" in r.message.lower() for r in caplog.records)
+
+
 def test_generiere_modell_nicht_installiert_gibt_none() -> None:
     client = OllamaClient.aus_config(_config())
     http_error = urllib.error.HTTPError(

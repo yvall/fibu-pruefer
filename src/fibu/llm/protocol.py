@@ -11,6 +11,11 @@ class LlmClient(Protocol):
         """Konfigurierter Modellname (für Logs und Eval-Berichte)."""
         ...
 
+    @property
+    def max_befunde_je_gruppe(self) -> int:
+        """Maximale Befundanzahl je Gruppe für LLM-Formulierung; darüber → Sammelgruppe."""
+        ...
+
     def modell_fuer(self, skill_id: str) -> str:
         """Gibt das skill-spezifische Modell oder das Standard-Modell zurück."""
         ...

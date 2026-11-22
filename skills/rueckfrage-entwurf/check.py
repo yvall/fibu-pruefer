@@ -3,10 +3,11 @@
 Deterministischer Kern: Fasst fehler/pruefen-Befunde nach Regel als
 saubere Markdown-Liste, Schlussbitte genau einmal am Ende.
 
-LLM-Formulierung: Ein Modellaufruf für alle Gruppen. Zuordnung per Regelname.
-Zahl-Kontrolle je Gruppe nur auf Basis der im Prompt gezeigten Zahlen (f.title),
-nicht auf f.detail. Diagnose (Rückfallgrund je Gruppe) geht in _meta, nicht
-in den Befundtext. Versand-tauglicher Text: keine Diagnosetexte im Detail.
+LLM-Formulierung: Ein Modellaufruf je Gruppe (nicht alle auf einmal).
+Gruppen mit mehr als llm.max_befunde_je_gruppe Befunden → deterministisch
+("Sammelgruppe"), kein LLM-Aufruf. Zahl-Kontrolle je Gruppe nur auf Basis
+der im Prompt gezeigten Zahlen (f.title), nicht auf f.detail.
+Diagnose (Rückfallgrund je Gruppe) geht in _meta, nicht in den Befundtext.
 
 Pflichtangaben (Vollständigkeit, aus Titeln):
 - Beträge (€), Kontonummern (Konto NNNN), Anzahlen (N×, N überfällig)
@@ -69,7 +70,7 @@ _ZAHLWOERTER: frozenset[str] = frozenset({
 
 
 # ---------------------------------------------------------------------------
-# Pydantic-Modelle für LLM-Antwort
+# Pydantic-Modell für LLM-Einzelgruppen-Antwort
 # ---------------------------------------------------------------------------
 
 class _Gruppe(BaseModel):
@@ -77,29 +78,15 @@ class _Gruppe(BaseModel):
     text: str     # Rückfragetext, max. 800 Zeichen, kein Markdown
 
 
-class _LlmAntwort(BaseModel):
-    gruppen: list[_Gruppe]
+_Gruppe.model_rebuild()
 
-
-_LlmAntwort.model_rebuild()
-
-_JSON_SCHEMA: dict[str, Any] = {
+_JSON_SCHEMA_EINZELGRUPPE: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "gruppen": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "thema": {"type": "string"},
-                    "text": {"type": "string"},
-                },
-                "required": ["thema", "text"],
-                "additionalProperties": False,
-            },
-        }
+        "thema": {"type": "string"},
+        "text": {"type": "string"},
     },
-    "required": ["gruppen"],
+    "required": ["thema", "text"],
     "additionalProperties": False,
 }
 
@@ -250,44 +237,42 @@ def _entwurf_deterministisch(findings: list[Finding]) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
-# Prompt-Bau
+# Prompt-Bau (eine Gruppe)
 # ---------------------------------------------------------------------------
 
-def _baue_prompt(gruppen_dict: dict[str, list[Finding]], periode_str: str) -> str:
-    """Baut den Prompt für den LLM-Aufruf (ein Aufruf für alle Gruppen)."""
-    gruppen_teile: list[str] = []
-    for rule, gruppe in gruppen_dict.items():
-        n = len(gruppe)
-        befunde_zeilen = [f"  Befund: {f.title}" for f in gruppe]
-        gruppen_teile.append(
-            f'Gruppe "{rule}" ({n} Befund{"e" if n != 1 else ""}):\n'
-            + "\n".join(befunde_zeilen)
-        )
-    gruppen_text = "\n\n".join(gruppen_teile)
+def _baue_prompt(rule: str, gruppe: list[Finding], periode_str: str) -> str:
+    """Baut den Prompt für einen einzelnen Gruppen-Aufruf."""
+    n = len(gruppe)
+    befunde_zeilen = [f"  Befund: {f.title}" for f in gruppe]
+    gruppe_text = (
+        f'Gruppe "{rule}" ({n} Befund{"e" if n != 1 else ""}):\n'
+        + "\n".join(befunde_zeilen)
+    )
     return (
         _PROMPT_TEMPLATE
         .replace("{{ periode }}", periode_str)
-        .replace("{{ gruppen }}", gruppen_text)
+        .replace("{{ gruppe }}", gruppe_text)
     )
 
 
 # ---------------------------------------------------------------------------
-# LLM-Antwort-Parsing
+# LLM-Antwort-Parsing (Einzelgruppe)
 # ---------------------------------------------------------------------------
 
-def _parse_llm_antwort(roh: str) -> _LlmAntwort | None:
+def _parse_llm_antwort(roh: str) -> _Gruppe | None:
+    """Parst die LLM-Antwort als einzelne Gruppe."""
     try:
-        return _LlmAntwort.model_validate_json(roh)
+        return _Gruppe.model_validate_json(roh)
     except (ValueError, ValidationError):
         pass
     try:
-        return _LlmAntwort.model_validate(json.loads(roh))
+        return _Gruppe.model_validate(json.loads(roh))
     except (ValueError, ValidationError, json.JSONDecodeError):
         pass
-    m = re.search(r'\{.*"gruppen".*\}', roh, re.DOTALL)
+    m = re.search(r'\{[^{}]*"thema"[^{}]*"text"[^{}]*\}', roh, re.DOTALL)
     if m:
         try:
-            return _LlmAntwort.model_validate(json.loads(m.group(0)))
+            return _Gruppe.model_validate(json.loads(m.group(0)))
         except (ValueError, ValidationError, json.JSONDecodeError):
             pass
     return None
@@ -298,7 +283,7 @@ def _parse_llm_antwort(roh: str) -> _LlmAntwort | None:
 # ---------------------------------------------------------------------------
 
 # Rückfalldiagnose je Gruppe: von run() gesetzt, von der Runtime über _meta abgerufen.
-# Enthält: rueckfall_gruppen {rule: grund}, gruppen_gesamt, llm_gruppen.
+# Enthält: rueckfall_gruppen {rule: grund}, gruppen_gesamt, llm_gruppen, sammelgruppen.
 _meta: dict[str, Any] = {}
 
 
@@ -324,46 +309,46 @@ def run(ctx: Context, llm: LlmClient) -> list[Finding]:
         gruppen_dict.setdefault(f.rule, []).append(f)
 
     periode_str = f"{_MON[ctx.auswertung.month]} {ctx.auswertung.year}"
-    prompt = _baue_prompt(gruppen_dict, periode_str)
-
-    modell = llm.modell_fuer(SKILL_ID)
-    roh = llm.generiere(prompt, json_schema=_JSON_SCHEMA, modell=modell)
-
-    if roh is None:
-        log.debug("rueckfrage-entwurf: kein LLM-Response – globaler Fallback")
-        _meta = {
-            "rueckfall_gruppen": {r: "kein LLM-Response" for r in gruppen_dict},
-            "gruppen_gesamt": len(gruppen_dict),
-            "llm_gruppen": 0,
-        }
-        return _entwurf_deterministisch(ctx.befunde)
-
-    antwort = _parse_llm_antwort(roh)
-    if antwort is None:
-        log.debug("rueckfrage-entwurf: Parse-Fehler – globaler Fallback")
-        _meta = {
-            "rueckfall_gruppen": {r: "Parse-Fehler" for r in gruppen_dict},
-            "gruppen_gesamt": len(gruppen_dict),
-            "llm_gruppen": 0,
-        }
-        return _entwurf_deterministisch(ctx.befunde)
-
-    # Zuordnung per Regelname; erste Nennung gewinnt bei Duplikaten
-    llm_map: dict[str, _Gruppe] = {}
-    for g in antwort.gruppen:
-        thema = g.thema.strip()
-        if thema not in llm_map:
-            llm_map[thema] = g
+    max_befunde = llm.max_befunde_je_gruppe
 
     rueckfall_gruppen: dict[str, str] = {}
+    sammelgruppen = 0
     llm_gruppen = 0
     result: list[Finding] = []
 
     for rule, gruppe in gruppen_dict.items():
-        llm_gruppe = llm_map.get(rule)
+        # Sammelgruppe: zu viele Befunde → kein LLM-Aufruf
+        if len(gruppe) > max_befunde:
+            sammelgruppen += 1
+            rueckfall_gruppen[rule] = "Sammelgruppe"
+            result.append(_entwurf_deterministisch_gruppe(rule, gruppe))
+            continue
+
+        # Pro Gruppe ein LLM-Aufruf
+        prompt = _baue_prompt(rule, gruppe, periode_str)
+        modell = llm.modell_fuer(SKILL_ID)
+        roh = llm.generiere(prompt, json_schema=_JSON_SCHEMA_EINZELGRUPPE, modell=modell)
+
+        if roh is None:
+            log.debug("rueckfrage-entwurf: Gruppe %s – kein LLM-Response – Fallback", rule)
+            rueckfall_gruppen[rule] = "kein LLM-Response"
+            result.append(_entwurf_deterministisch_gruppe(rule, gruppe))
+            continue
+
+        llm_gruppe = _parse_llm_antwort(roh)
         if llm_gruppe is None:
-            log.debug("rueckfrage-entwurf: Gruppe %s fehlt – Fallback", rule)
-            rueckfall_gruppen[rule] = "Gruppe fehlt in LLM-Antwort"
+            log.debug("rueckfrage-entwurf: Gruppe %s – Parse-Fehler – Fallback", rule)
+            rueckfall_gruppen[rule] = "Parse-Fehler"
+            result.append(_entwurf_deterministisch_gruppe(rule, gruppe))
+            continue
+
+        # Prüfe dass thema stimmt
+        if llm_gruppe.thema.strip() != rule:
+            log.debug(
+                "rueckfrage-entwurf: Gruppe %s – falsches Thema %r – Fallback",
+                rule, llm_gruppe.thema,
+            )
+            rueckfall_gruppen[rule] = f"falsches Thema: {llm_gruppe.thema!r}"
             result.append(_entwurf_deterministisch_gruppe(rule, gruppe))
             continue
 
@@ -379,7 +364,7 @@ def run(ctx: Context, llm: LlmClient) -> list[Finding]:
         result.append(Finding(
             rule=SKILL_ID,
             severity="info",
-            title=f"Rückfrage: {llm_gruppe.thema} ({n} Befund{'e' if n != 1 else ''})",
+            title=f"Rückfrage: {rule} ({n} Befund{'e' if n != 1 else ''})",
             detail=llm_gruppe.text,
         ))
 
@@ -387,6 +372,7 @@ def run(ctx: Context, llm: LlmClient) -> list[Finding]:
         "rueckfall_gruppen": rueckfall_gruppen,
         "gruppen_gesamt": len(gruppen_dict),
         "llm_gruppen": llm_gruppen,
+        "sammelgruppen": sammelgruppen,
     }
 
     return result

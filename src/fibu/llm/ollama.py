@@ -34,6 +34,10 @@ class OllamaClient:
     def modell(self) -> str:
         return self._config.modell
 
+    @property
+    def max_befunde_je_gruppe(self) -> int:
+        return self._config.max_befunde_je_gruppe
+
     def modell_fuer(self, skill_id: str) -> str:
         """Gibt das skill-spezifische Modell aus modell_zuordnung oder das Standard-Modell."""
         return self._config.modell_zuordnung.get(skill_id, self._config.modell)
@@ -88,7 +92,22 @@ class OllamaClient:
             else:
                 log.warning("Ollama HTTP %d: %s", exc.code, fehler_body[:200])
             return None
-        except Exception as exc:  # noqa: BLE001 – Netzwerk/Timeout/JSON: immer None
+        except TimeoutError:
+            log.warning(
+                "Zeitüberschreitung nach %d s (Ollama erreichbar)",
+                self._config.timeout_sekunden,
+            )
+            return None
+        except urllib.error.URLError as exc:
+            if isinstance(getattr(exc, "reason", None), TimeoutError):
+                log.warning(
+                    "Zeitüberschreitung nach %d s (Ollama erreichbar)",
+                    self._config.timeout_sekunden,
+                )
+            else:
+                log.warning("Ollama nicht erreichbar: %s", exc)
+            return None
+        except Exception as exc:  # noqa: BLE001 – JSON/sonstige Fehler: immer None
             log.warning("Ollama nicht erreichbar: %s", exc)
             return None
 
