@@ -22,3 +22,6 @@ eval_vorlage.json
 # Datenbanken und Sicherungskopien
 *.db
 *.bak
+
+# Weitere lokale Konfigurationen (Varianten von lokal.yaml)
+config/lokal_*.yaml
