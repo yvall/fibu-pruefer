@@ -1,6 +1,6 @@
 # Fortschritt Phase 3 – LLM-Skills
 
-**Stand: 2026-11-22 · Letzter Commit: `6fd3cc1` · Tests: 578 (19 übersprungen; mit FIBU_GOLDEN_DIR 597)**
+**Stand: 2026-11-24 · Letzter Commit: `1474586` · Tests: 563 (19 übersprungen; mit FIBU_GOLDEN_DIR 582)**
 
 ## Gesamtstand Phase 3
 
@@ -405,23 +405,29 @@ nachzutragen ist.
 Noch nicht begonnen. Einstiegspunkt: neues `Protocol IngestSource` in
 `src/fibu/ingest/`; IMAP-Polling und Ordner-Watch als Implementierungen.
 
-**(j) Beleg-Parser: OCR-Zweitversuch für Belege ohne Betrag** – umgesetzt (`6fd3cc1`)
-`legacy/fibu_pruefer/belege.py`: Nur für per OCR gelesene Belege mit `alle == []` läuft ein
-Zweitversuch mit 15 fest gereihten Varianten (Vorverarbeitung Graustufen, Autokontrast,
-Vergrößerung 2x/3x, Schwellwert 128; je `--psm 6/11/4`, Sprache `eng` wie im Erstdurchgang).
-Es gewinnt die erste Variante, deren Text nach `analyse()` einen Betrag liefert; sie steht in
-`Beleg.ocr_variante`. Cache je Variante `<sha>.<variante>.txt`; `<sha>.txt` bleibt unberührt.
-Belege mit erkanntem Betrag werden nicht erneut gelesen (Test weist Ergebnis und Cache bitgleich nach).
-15 neue Tests in `tests/unit/test_ocr_zweitversuch.py` (gemockte OCR, synthetische Bilder; ein
-Rauchtest mit echtem Tesseract, übersprungen wenn nicht installiert). Für jede Variante belegt:
-ohne sie wird ihr Test rot.
-
+**(j) ✗ OCR-Zweitversuch geprüft und verworfen** – nicht übernommen (`6fd3cc1`, zurückgenommen in `1474586`)
+Versuch: Für per OCR gelesene Belege ohne erkannten Betrag ein Zweitversuch mit 15 fest gereihten
+Varianten (Graustufen, Autokontrast, Vergrößerung 2x/3x, Schwellwert 128; je `--psm 6/11/4`, `eng`),
+eigener Cache je Variante, Belege mit Betrag bitgleich.
 Messung 08 Aug (ohne Schalter): Belege ohne Betrag vorher 4, nachher 4 (3 Storno-Textdateien,
-nicht OCR, daher nicht betroffen; 1 OCR-Beleg `YV/101_08_Park3.pdf`). Park3 wird **nicht**
-erkannt (erwartet 2,00 €): Punktmatrix-Schrift mit durchgestrichener Null, Ziffern ca. 400 px hoch.
-Keine der 15 Varianten liefert einen Betrag; auch Gegenproben außerhalb der Liste (Verkleinerung
-0,5x–0,15x, `deu`) nicht – bestenfalls `2.00e`, was bewusst nicht als Betrag gilt.
-Befundzahlen unverändert 6/16/25, Bericht bis auf den Prüfzeitpunkt identisch, Golden-Test und
-Gesamtvergleich grün. Erstlauf 33 s (15 Tesseract-Läufe für Park3), danach aus dem Cache 2,3 s.
-Eval (`evals/run_eval.py`): kein Eval-Ordner mit `vorlage_*.json` auf diesem Rechner, nicht gelaufen.
-Nächster möglicher Schritt für solche Fotos: Bild-LLM oder andere OCR-Engine (nicht Tesseract).
+nicht OCR; 1 OCR-Beleg `YV/101_08_Park3.pdf`, erwartet 2,00 €). Befundzahlen 6/16/25 unverändert.
+Begründung: Park3 ist in Punktmatrix-Schrift mit durchgestrichener Null gedruckt (Ziffern ca. 400 px
+hoch bei 300 dpi). Keine der 15 Varianten liefert einen Betrag; auch Gegenproben außerhalb der Liste
+(Verkleinerung 0,5x–0,15x, `deu`) nicht – bestenfalls `2.00e`, was bewusst nicht als Betrag gilt.
+Kein Gewinn, aber 33 s Zusatzlaufzeit im Erstlauf (15 Tesseract-Läufe für einen Beleg).
+Ergebnis: nicht übernommen; der Versuch bleibt in der Git-Historie sichtbar.
+Mögliche Wege für solche Belege: Bild-Modell (über `src/fibu/llm/`, Ausgabe gegen Schema validiert)
+oder andere OCR-Engine statt Tesseract, oder manuelle Erfassung (z. B. Eigenbeleg mit Betrag).
+Hinweis: Im Cache `08 Aug/.fibu_cache` liegen aus dem Versuch noch 15 Variantendateien
+`<sha>.<variante>.txt` für Park3; sie werden vom aktuellen Code nicht gelesen.
+
+**(k) mypy: `src/fibu/contracts/finding.py:50` meldet unbenutztes `type: ignore`**
+`mypy src` liefert auf diesem Rechner 1 Fehler (`unused-ignore`, schlägt `[prop-decorator]` statt
+`[misc]` vor); bestand schon vor (j). Vermutlich unterschiedliche mypy-/Pydantic-Version zwischen
+den Macs. Sperrdatei der Paketversionen erwägen (z. B. `uv.lock` einchecken), dann Kommentar anpassen.
+
+**(l) Golden-Test und Gesamtvergleich laufen nur mit `FIBU_GOLDEN_DIR`**
+Ohne die Variable überspringen sich `tests/golden/test_golden.py` und
+`tests/integration/test_gesamtvergleich.py` (Teil der 19 übersprungenen Tests).
+Vollständiger Lauf: `FIBU_GOLDEN_DIR="$HOME/fibu-echtdaten/08 Aug" pytest -q` – Basis 582 bestanden,
+0 übersprungen.
