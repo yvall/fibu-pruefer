@@ -1,6 +1,6 @@
 # Fortschritt Phase 3 – LLM-Skills
 
-**Stand: 2026-11-24 · Letzter Commit: `1474586` · Tests: 563 (19 übersprungen; mit FIBU_GOLDEN_DIR 582)**
+**Stand: 2026-11-24 · Letzter Commit: `aecc9e6` · Tests: 563 (19 übersprungen; mit FIBU_GOLDEN_DIR 582)**
 
 ## Gesamtstand Phase 3
 
@@ -421,10 +421,23 @@ oder andere OCR-Engine statt Tesseract, oder manuelle Erfassung (z. B. Eigenbele
 Hinweis: Im Cache `08 Aug/.fibu_cache` liegen aus dem Versuch noch 15 Variantendateien
 `<sha>.<variante>.txt` für Park3; sie werden vom aktuellen Code nicht gelesen.
 
-**(k) mypy: `src/fibu/contracts/finding.py:50` meldet unbenutztes `type: ignore`**
-`mypy src` liefert auf diesem Rechner 1 Fehler (`unused-ignore`, schlägt `[prop-decorator]` statt
-`[misc]` vor); bestand schon vor (j). Vermutlich unterschiedliche mypy-/Pydantic-Version zwischen
-den Macs. Sperrdatei der Paketversionen erwägen (z. B. `uv.lock` einchecken), dann Kommentar anpassen.
+**(k) ✓ mypy: `src/fibu/contracts/finding.py:50` – erledigt (`aecc9e6`)**
+Ursache: unterschiedliche Paketversionen auf den beiden Macs (Mac 1: mypy 1.10.0, pytest 7.4.4,
+ruff 0.17.5, pydantic 2.14.3; Mac 2: mypy 2.4.1, pytest 9.2.0, ruff 0.17.6, pydantic 2.14.4).
+mypy 2.x meldete das `type: ignore[misc]` am `computed_field` als überflüssig; jetzt
+`type: ignore[prop-decorator]`, `mypy src` ohne Befund.
+Neue Sperrdatei `constraints.txt` (aus `pip freeze --exclude-editable`, 61 Pakete) legt die
+Versionen für beide Macs fest. Neue Umgebung anlegen:
+
+```
+python -m venv .venv
+source .venv/bin/activate
+pip install -c constraints.txt -e ".[dev]"
+```
+
+Pflege: nur bei bewusstem Update neu erzeugen (`pip freeze --exclude-editable`, Kopfkommentar
+übernehmen) und danach auf beiden Macs pytest, `ruff check .` und `mypy src` laufen lassen.
+Mac 1 muss einmalig neu installiert werden, um auf den Stand der Sperrdatei zu kommen.
 
 **(l) Golden-Test und Gesamtvergleich laufen nur mit `FIBU_GOLDEN_DIR`**
 Ohne die Variable überspringen sich `tests/golden/test_golden.py` und
