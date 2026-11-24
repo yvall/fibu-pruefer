@@ -47,7 +47,7 @@ class Finding(BaseModel):
         normiert = re.sub(r"[^a-z_ ]", "", _ohne_zahlen(self.title).lower())
         return normiert[:60]
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def id(self) -> str:
         """Stabile ID: sha256({rule}:{fachlicher_schluessel})[:16] + optionales Suffix."""
